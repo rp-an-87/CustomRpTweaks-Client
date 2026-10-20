@@ -27,7 +27,11 @@
   </ItemGroup>
 
   <Target Name="CopyToSPT" AfterTargets="Build" Condition="'$(SptDir)' != ''">
+    <!-- .orig = the first DLL ever replaced (never overwritten); .bak = the previous deploy. A loaded DLL can be renamed but not overwritten, so the old one is moved aside first. -->
     <MakeDir Directories="$(SptDir)\BepInEx\plugins\CustomRpTweaks.Client" />
+    <Copy SourceFiles="$(SptDir)\BepInEx\plugins\CustomRpTweaks.Client\$(TargetFileName)" DestinationFiles="$(SptDir)\BepInEx\plugins\CustomRpTweaks.Client\$(TargetFileName).orig" Condition="Exists('$(SptDir)\BepInEx\plugins\CustomRpTweaks.Client\$(TargetFileName)') And !Exists('$(SptDir)\BepInEx\plugins\CustomRpTweaks.Client\$(TargetFileName).orig')" />
+    <Delete Files="$(SptDir)\BepInEx\plugins\CustomRpTweaks.Client\$(TargetFileName).bak" ContinueOnError="true" />
+    <Move SourceFiles="$(SptDir)\BepInEx\plugins\CustomRpTweaks.Client\$(TargetFileName)" DestinationFiles="$(SptDir)\BepInEx\plugins\CustomRpTweaks.Client\$(TargetFileName).bak" Condition="Exists('$(SptDir)\BepInEx\plugins\CustomRpTweaks.Client\$(TargetFileName)')" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(SptDir)\BepInEx\plugins\CustomRpTweaks.Client" />
     <Message Importance="high" Text="Copied to $(SptDir)\BepInEx\plugins\CustomRpTweaks.Client" />
   </Target>
