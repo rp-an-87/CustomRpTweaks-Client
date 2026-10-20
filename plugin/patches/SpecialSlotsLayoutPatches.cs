@@ -1,3 +1,5 @@
+using System.Collections;
+using System.Collections.Generic;
 using System.Reflection;
 using EFT.UI.DragAndDrop;
 using SPT.Reflection.Patching;
@@ -13,6 +15,9 @@ namespace CustomRpTweaks.Client.Patches
 		// Size of a 1x1 inventory cell; the slot template reports no usable size of its own
 		private const float CellSize = 63f;
 
+		// Panels whose layout is being swapped; the swap finishes next frame
+		private static readonly HashSet<RectTransform> Pending = new HashSet<RectTransform>();
+
 		protected override MethodBase GetTargetMethod() => typeof(SearchableSlotView).GetMethod(nameof(SearchableSlotView.CreateSlots), BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly);
 
 		[PatchPostfix]
@@ -26,27 +31,58 @@ namespace CustomRpTweaks.Client.Patches
 				return;
 			}
 
-			var grid = panel.GetComponent<GridLayoutGroup>() ?? ReplaceLayoutWithGrid(panel);
-			grid.constraintCount = perRow;
-			LayoutRebuilder.MarkLayoutForRebuild(panel);
-		}
+			var grid = panel.GetComponent<GridLayoutGroup>();
+			if (grid != null)
+			{
+				grid.constraintCount = perRow;
+				LayoutRebuilder.MarkLayoutForRebuild(panel);
+				return;
+			}
 
-		private static GridLayoutGroup ReplaceLayoutWithGrid(RectTransform panel)
-		{
 			var oldLayout = panel.GetComponent<HorizontalOrVerticalLayoutGroup>();
 			var spacing = oldLayout != null ? oldLayout.spacing : 0f;
-			var padding = oldLayout != null ? oldLayout.padding : new RectOffset();
+			var padding = oldLayout != null ? new RectOffset(oldLayout.padding.left, oldLayout.padding.right, oldLayout.padding.top, oldLayout.padding.bottom) : new RectOffset();
 			if (oldLayout != null)
 			{
 				Object.DestroyImmediate(oldLayout);
 			}
 
+			// A panel can only have one layout group. Unity refuses to destroy components immediately in some callbacks
+			// (e.g. during screen transitions): in that case remove it normally and add the grid next frame
+			if (panel.GetComponent<LayoutGroup>() != null)
+			{
+				if (Pending.Add(panel))
+				{
+					Object.Destroy(panel.GetComponent<LayoutGroup>());
+					Plugin.Instance.StartCoroutine(AddGridNextFrame(panel, spacing, padding));
+				}
+
+				return;
+			}
+
+			AddGrid(panel, spacing, padding);
+		}
+
+		private static IEnumerator AddGridNextFrame(RectTransform panel, float spacing, RectOffset padding)
+		{
+			yield return null;
+
+			Pending.Remove(panel);
+			if (panel != null && panel.GetComponent<GridLayoutGroup>() == null)
+			{
+				AddGrid(panel, spacing, padding);
+			}
+		}
+
+		private static void AddGrid(RectTransform panel, float spacing, RectOffset padding)
+		{
 			var grid = panel.gameObject.AddComponent<GridLayoutGroup>();
 			grid.padding = padding;
 			grid.spacing = new Vector2(spacing, spacing);
 			grid.cellSize = new Vector2(CellSize, CellSize);
 			grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
-			return grid;
+			grid.constraintCount = Plugin.SpecialSlotsPerRow.Value;
+			LayoutRebuilder.MarkLayoutForRebuild(panel);
 		}
 	}
 }

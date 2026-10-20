@@ -43,14 +43,12 @@ namespace CustomRpTweaks.Client.Patches
 			[PatchPostfix]
 			private static void Postfix(SkillTooltip __instance, Skill skill)
 			{
-				if (!SkillThrottlePatches.IsThrottled(skill, out int pmcLevel))
+				if (!SkillThrottlePatches.IsThrottled(skill, out int untilPmcLevel))
 				{
 					return;
 				}
 
-				int overshoot = Plugin.SkillLevelOvershoot.Value;
-				string limit = overshoot > 0 ? $"{pmcLevel} + {overshoot}" : pmcLevel.ToString();
-				__instance._description.text += $"\n\n<color={Red}>Throttled to PMC Level ({limit})</color>";
+				__instance._description.text += $"\n\n<color={Red}>Throttled until PMC Level {untilPmcLevel}</color>";
 			}
 		}
 	}

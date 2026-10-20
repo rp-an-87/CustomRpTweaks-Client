@@ -13,12 +13,14 @@ namespace CustomRpTweaks.Client
 		public const string PluginVersion = "1.0.0";
 
 		internal static ManualLogSource Log;
+		internal static Plugin Instance;
 
 		internal static ConfigEntry<bool> HideOtherPlayersSkillNotifications;
 		internal static ConfigEntry<bool> LogSuppressedNotifications;
 
 		internal static ConfigEntry<bool> ThrottleSkillsToPmcLevel;
 		internal static ConfigEntry<int> SkillLevelOvershoot;
+		internal static ConfigEntry<bool> LogThrottleDecisions;
 
 		internal static ConfigEntry<int> SpecialSlotsPerRow;
 		internal static ConfigEntry<bool> CraftFirHandling;
@@ -28,6 +30,7 @@ namespace CustomRpTweaks.Client
 		private void Awake()
 		{
 			Log = Logger;
+			Instance = this;
 
 			HideOtherPlayersSkillNotifications = Config.Bind("1. Notifications", "1. Hide skill level-up notifications of other characters", true,
 				"Bots/NPCs also level up their skills (a lot, with high skill multipliers). Only your own character should be able to show the skill and weapon mastery level-up notifications.");
@@ -39,6 +42,9 @@ namespace CustomRpTweaks.Client
 			SkillLevelOvershoot = Config.Bind("2. Skill throttle", "2. Allowed levels above PMC level", 0,
 				new ConfigDescription("How many levels above your PMC level a skill is still allowed to reach. 0 = skills are capped at your PMC level.",
 					new AcceptableValueRange<int>(0, 20)));
+
+			LogThrottleDecisions = Config.Bind("2. Skill throttle", "3. Log throttle decisions", false,
+				"Writes to the BepInEx log (at most once every 5 seconds per skill) what the throttle did to skill experience gains, and why it didn't apply when it didn't. For troubleshooting.");
 
 			SpecialSlotsPerRow = Config.Bind("3. Pockets", "1. Special slots per row", 3,
 				new ConfigDescription("When you have more special slots than this, the extra ones wrap onto the next row instead of overflowing.",
@@ -64,8 +70,8 @@ namespace CustomRpTweaks.Client
 			new StashSortReservePatches.FindFreeSpacePatch().Enable();
 			new StashSortReservePatches.GetFreeLocationPatch().Enable();
 
-			new SkillThrottlePatches.SkillOnTriggerPatch().Enable();
 			new SkillThrottlePatches.SkillSetCurrentPatch().Enable();
+			new SkillThrottlePatches.SkillCurrentSetterPatch().Enable();
 
 			new SkillThrottleUiPatches.SkillPanelShowPatch().Enable();
 			new SkillThrottleUiPatches.SkillPanelLevelChangedPatch().Enable();
