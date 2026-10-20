@@ -1,6 +1,7 @@
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
+using UnityEngine;
 using CustomRpTweaks.Client.Patches;
 
 namespace CustomRpTweaks.Client
@@ -26,6 +27,22 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<bool> CraftFirHandling;
 		internal static ConfigEntry<bool> KeepTopRowsFree;
 		internal static ConfigEntry<int> TopRowsToKeepFree;
+		internal static ConfigEntry<bool> KitButton;
+		internal static ConfigEntry<bool> KeepSpeedWhileZooming;
+		internal static ConfigEntry<int> KitHealthResource;
+		internal static ConfigEntry<int> KitBandageResource;
+		internal static ConfigEntry<int> KitHeavyBleedResource;
+		internal static ConfigEntry<int> KitPropital;
+		internal static ConfigEntry<int> KitGrenades;
+		internal static ConfigEntry<bool> KitAllowOvershoot;
+		internal static ConfigEntry<bool> KitSwapWorse;
+
+		internal static ConfigEntry<KeyboardShortcut> TopUpMagazine;
+
+		private void Update()
+		{
+			MagazineTopUp.Update();
+		}
 
 		private void Awake()
 		{
@@ -55,7 +72,7 @@ namespace CustomRpTweaks.Client
 			KeepTopRowsFree = Config.Bind("4. Stash sort", "1. Keep top rows free when sorting", false,
 				"Sorting the stash places items below the rows set here. The top rows are only used when everything else is full.");
 			TopRowsToKeepFree = Config.Bind("4. Stash sort", "2. Rows to keep free", 5,
-				new ConfigDescription("How many rows, counting from the top of the stash, to keep free when sorting.", new AcceptableValueRange<int>(1, 30)));
+				new ConfigDescription("How many rows, counting from the top of the stash, to keep free when sorting.", new AcceptableValueRange<int>(1, 50)));
 
 			CraftFirHandling = Config.Bind("5. Hideout", "1. Show FiR items in crafts and buy replacements", false,
 				"Craft requirements read 'total (FiR) / required' so you can see how many FiR items a craft would use, and the buy button purchases replacements for those (plus anything missing). Crafts can still use FiR items. Hideout upgrades and tools are not affected.");
@@ -64,6 +81,33 @@ namespace CustomRpTweaks.Client
 			new HideoutCraftFirPatches.BuyMaterialsPatch().Enable();
 			new HideoutCraftFirPatches.StartButtonPatch().Enable();
 			new HideoutCraftFirPatches.BuyTooltipPatch().Enable();
+
+			KitButton = Config.Bind("6. Kit button", "1. Show kit button in the stash", false,
+				"Adds a button above the pin button of your stash (hideout/menu only). Pressing it moves a preset list of consumables from the stash into your pockets, then vest, skipping what you already carry and what the stash doesn't have. Prefers non-FiR items, then the fullest ones.");
+			KitHealthResource = Config.Bind("6. Kit button", "2. Health resource (0 disables)", 300,
+				new ConfigDescription("Health resource of meds to carry. What you carry counts towards it (partly used kits count for what they have left). Missing resource is filled in priority order: AFAK, Salewa, IFAK, Car, AI-2. AFAK and Salewa are 400, IFAK 300, Car 220, AI-2 100.", new AcceptableValueRange<int>(0, 2000)));
+			KitBandageResource = Config.Bind("6. Kit button", "3. Bandage points (0 disables)", 2,
+				new ConfigDescription("Bandage points to carry: an Army bandage is 2, an Aseptic bandage is 1. Army bandages are preferred.", new AcceptableValueRange<int>(0, 20)));
+			KitHeavyBleedResource = Config.Bind("6. Kit button", "4. Heavy bleed points (0 disables)", 2,
+				new ConfigDescription("Heavy bleed points to carry: a CALOK-B is 2, a CAT or an Esmarch tourniquet is 1. Preference: CALOK-B, CAT, Esmarch.", new AcceptableValueRange<int>(0, 20)));
+			KitPropital = Config.Bind("6. Kit button", "5. Propital (0 disables)", 1,
+				new ConfigDescription("How many Propital injectors to carry.", new AcceptableValueRange<int>(0, 10)));
+			KitGrenades = Config.Bind("6. Kit button", "6. Grenades (0 disables)", 2,
+				new ConfigDescription("How many grenades to carry, taken in the order M67, RGD-5, F-1, VOG-17/25.", new AcceptableValueRange<int>(0, 10)));
+			KitAllowOvershoot = Config.Bind("6. Kit button", "7. Allow overshoot", true,
+				"When the missing amount is smaller than the next item in priority (e.g. 1 point missing and an Army bandage is next), take it anyway. When off, it skips to a smaller item that fits, or takes nothing.");
+
+			KitSwapWorse = Config.Bind("6. Kit button", "8. Swap worse items", true,
+				"Before filling up, items you carry that are worse than what the stash has (lower priority, partly used, or FiR when a non-FiR one is available) are moved to the stash and replaced by the better ones.");
+
+			new LoadoutKitButtonPatch().Enable();
+
+			KeepSpeedWhileZooming = Config.Bind("8. Movement", "1. Keep walk speed while zooming a scope", false,
+				"The mouse wheel changes both your walk speed and the zoom of a smooth-zoom scope. With this on, the wheel does not change your walk speed while you aim through a smooth-zoom (variable) scope and hold your scope zoom key combination (for example Alt + wheel). The wheel alone, other sights and not aiming are not affected.");
+			new ScopeZoomSpeedPatch().Enable();
+
+			TopUpMagazine = Config.Bind("7. Magazine top-up", "1. Top-up hotkey", new KeyboardShortcut(KeyCode.T),
+				"Hover a magazine in the stash or in a raid inventory and press this to fill it up. It uses the ammo the magazine already holds, or else the highest-penetration ammo it accepts, taken from the stash and your gear. In a raid it is the normal timed load. Unassign the key to turn the feature off.");
 
 			new StashSortOverlayPatch().Enable();
 			new StashSortReservePatches.SortPatch().Enable();

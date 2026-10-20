@@ -17,9 +17,11 @@
     <Reference Include="BepInEx"><HintPath>$(SptDir)\BepInEx\core\BepInEx.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="SPT.Reflection"><HintPath>$(SptDir)\BepInEx\plugins\spt\spt-reflection.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Assembly-CSharp"><HintPath>$(SptDir)\EscapeFromTarkov_Data\Managed\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="ItemComponent.Types"><HintPath>$(SptDir)\EscapeFromTarkov_Data\Managed\ItemComponent.Types.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Comfort"><HintPath>$(SptDir)\EscapeFromTarkov_Data\Managed\Comfort.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine"><HintPath>$(SptDir)\EscapeFromTarkov_Data\Managed\UnityEngine.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.CoreModule"><HintPath>$(SptDir)\EscapeFromTarkov_Data\Managed\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.InputLegacyModule"><HintPath>$(SptDir)\EscapeFromTarkov_Data\Managed\UnityEngine.InputLegacyModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.TextRenderingModule"><HintPath>$(SptDir)\EscapeFromTarkov_Data\Managed\UnityEngine.TextRenderingModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.UI"><HintPath>$(SptDir)\EscapeFromTarkov_Data\Managed\UnityEngine.UI.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Unity.TextMeshPro"><HintPath>$(SptDir)\EscapeFromTarkov_Data\Managed\Unity.TextMeshPro.dll</HintPath><Private>false</Private></Reference>
