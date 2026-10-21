@@ -24,6 +24,7 @@ namespace CustomRpTweaks.Client
 		{
 			public Func<int> Target;
 			public Entry[] Entries; // in priority order
+			public bool Random; // the entries are equal: whichever the stash has, picked at random
 		}
 
 		private static Entry Count(string template) => new Entry { Template = template, Weight = item => 1f };
@@ -35,7 +36,8 @@ namespace CustomRpTweaks.Client
 		private static IEnumerable<Group> GrenadeGroups() => Plugin.KitGrenadeTypes.Select((grenade, index) => new Group
 		{
 			Target = () => Plugin.KitGrenadeCounts[index].Value,
-			Entries = new[] { Count(grenade.Template) }
+			Entries = grenade.Templates.Select(Count).ToArray(),
+			Random = grenade.Templates.Length > 1
 		});
 
 		private static Group[] Core() => new[]
@@ -255,6 +257,11 @@ namespace CustomRpTweaks.Client
 
 		private static int PriorityOf(Group group, Item item)
 		{
+			if (group.Random)
+			{
+				return 0;
+			}
+
 			var template = item.TemplateId.ToString();
 			return Array.FindIndex(group.Entries, entry => entry.Template == template);
 		}
@@ -307,7 +314,7 @@ namespace CustomRpTweaks.Client
 		// Group entries in priority order; within one template, non-FiR first, then the fullest resource
 		private static IEnumerable<Item> Candidates(List<Item> items, Group group)
 		{
-			foreach (var entry in group.Entries)
+			foreach (var entry in group.Random ? group.Entries.OrderBy(_ => Guid.NewGuid()) : group.Entries.AsEnumerable())
 			{
 				foreach (var item in items
 					.Where(item => item.TemplateId.ToString() == entry.Template)
