@@ -30,7 +30,15 @@ namespace CustomRpTweaks.Client
 		private static Entry Points(string template, float points) => new Entry { Template = template, Weight = item => points };
 		private static Entry Resource(string template) => new Entry { Template = template, Weight = ResourceOf };
 
-		private static Group[] Groups => _groups ?? (_groups = new[]
+		private static Group[] Groups => _groups ?? (_groups = Core().Concat(GrenadeGroups()).ToArray());
+
+		private static IEnumerable<Group> GrenadeGroups() => Plugin.KitGrenadeTypes.Select((grenade, index) => new Group
+		{
+			Target = () => Plugin.KitGrenadeCounts[index].Value,
+			Entries = new[] { Count(grenade.Template) }
+		});
+
+		private static Group[] Core() => new[]
 		{
 			new Group
 			{
@@ -49,7 +57,7 @@ namespace CustomRpTweaks.Client
 				Target = () => Plugin.KitBandageResource.Value,
 				Entries = new[]
 				{
-					Points("5751a25924597722c463c472", 2f), // Army bandage
+					Resource("5751a25924597722c463c472"), // Army bandage: its remaining uses (2 new)
 					Points("544fb25a4bdc2dfb738b4567", 1f)  // Aseptic bandage
 				}
 			},
@@ -58,7 +66,7 @@ namespace CustomRpTweaks.Client
 				Target = () => Plugin.KitHeavyBleedResource.Value,
 				Entries = new[]
 				{
-					Points("5e8488fa988a8701445df1e4", 2f), // CALOK-B
+					Resource("5e8488fa988a8701445df1e4"), // CALOK-B: its remaining uses (3 new)
 					Points("60098af40accd37ef2175f27", 1f), // CAT
 					Points("5e831507ea0a7c419c2f9bd9", 1f)  // Esmarch
 				}
@@ -67,21 +75,8 @@ namespace CustomRpTweaks.Client
 			{
 				Target = () => Plugin.KitPropital.Value,
 				Entries = new[] { Count("5c0e530286f7747fa1419862") }
-			},
-			new Group
-			{
-				Target = () => Plugin.KitGrenades.Value,
-				Entries = new[]
-				{
-					Count("58d3db5386f77426186285a0"), // M67
-					Count("5448be9a4bdc2dfd2f8b456a"), // RGD-5
-					Count("5710c24ad2720bc3458b45a3"), // F-1
-					Count("67b49e7335dec48e3e05e057"), // F-1 (reduced delay)
-					Count("5e32f56fcb6d5863cc5e5ee4"), // VOG-17
-					Count("5e340dcdcb6d5863cc5e5efb")  // VOG-25
-				}
 			}
-		});
+		};
 
 		private static Group[] _groups;
 		private static bool _running;
@@ -203,7 +198,7 @@ namespace CustomRpTweaks.Client
 				Item better = null;
 				foreach (var current in carried.OrderByDescending(item => PriorityOf(group, item)).ThenBy(ResourceOf))
 				{
-					better = candidates.FirstOrDefault(candidate => IsBetter(group, candidate, current)
+					better = candidates.FirstOrDefault(candidate => IsBetter(group, candidate, current, total < group.Target())
 						&& total - WeightOf(group, current) + WeightOf(group, candidate) >= Math.Min(total, group.Target()));
 					if (better != null)
 					{
@@ -237,14 +232,16 @@ namespace CustomRpTweaks.Client
 			}
 		}
 
-		// Higher priority template, or the same template with more resource, or non-FiR instead of FiR at no less resource
-		private static bool IsBetter(Group group, Item candidate, Item current)
+		// The same template with more resource (FiR is the tie-breaker: non-FiR wins a tie), or a higher priority template,
+		// but only while the group is still short of its target: a set that already meets it (say two single tourniquets
+		// instead of a CALOK) isn't upgraded to a higher priority item
+		private static bool IsBetter(Group group, Item candidate, Item current, bool belowTarget)
 		{
 			int candidatePriority = PriorityOf(group, candidate);
 			int currentPriority = PriorityOf(group, current);
 			if (candidatePriority != currentPriority)
 			{
-				return candidatePriority < currentPriority;
+				return belowTarget && candidatePriority < currentPriority;
 			}
 
 			if (candidate.MarkedAsSpawnedInSession == current.MarkedAsSpawnedInSession)
@@ -252,7 +249,8 @@ namespace CustomRpTweaks.Client
 				return ResourceOf(candidate) > ResourceOf(current);
 			}
 
-			return current.MarkedAsSpawnedInSession && ResourceOf(candidate) >= ResourceOf(current);
+			// FiR only counts against an item: a non-FiR one wins a tie, a FiR one has to bring more resource
+			return candidate.MarkedAsSpawnedInSession ? ResourceOf(candidate) > ResourceOf(current) : ResourceOf(candidate) >= ResourceOf(current);
 		}
 
 		private static int PriorityOf(Group group, Item item)

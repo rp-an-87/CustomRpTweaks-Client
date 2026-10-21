@@ -1,3 +1,4 @@
+using System.Linq;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
@@ -33,7 +34,24 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<int> KitBandageResource;
 		internal static ConfigEntry<int> KitHeavyBleedResource;
 		internal static ConfigEntry<int> KitPropital;
-		internal static ConfigEntry<int> KitGrenades;
+		// Grenade types the kit can bring: template id, name, default amount. One setting each.
+		internal static readonly (string Template, string Name, int Default)[] KitGrenadeTypes =
+		{
+			("58d3db5386f77426186285a0", "M67", 2),
+			("5448be9a4bdc2dfd2f8b456a", "RGD-5", 0),
+			("5710c24ad2720bc3458b45a3", "F-1", 0),
+			("67b49e7335dec48e3e05e057", "F-1 (reduced delay)", 0),
+			("66dae7cbeb28f0f96809f325", "V40 mini-grenade", 0),
+			("617fd91e5539a84ec44ce155", "RGN", 0),
+			("618a431df1eb8e24b8741deb", "RGO", 0),
+			("5e32f56fcb6d5863cc5e5ee4", "VOG-17", 0),
+			("5e340dcdcb6d5863cc5e5efb", "VOG-25", 0),
+			("5a0c27731526d80618476ac4", "Zarya stun", 0),
+			("619256e5f8af2c1a4e1f5d92", "Model 7290 flashbang", 0),
+			("5a2a57cfc4a2826c6e06d44a", "RDG-2B smoke", 0),
+			("617aa4dd8166f034d57de9c5", "M18 smoke (green)", 0),
+		};
+		internal static ConfigEntry<int>[] KitGrenadeCounts;
 		internal static ConfigEntry<bool> KitAllowOvershoot;
 		internal static ConfigEntry<bool> KitSwapWorse;
 
@@ -87,13 +105,15 @@ namespace CustomRpTweaks.Client
 			KitHealthResource = Config.Bind("6. Kit button", "2. Health resource (0 disables)", 300,
 				new ConfigDescription("Health resource of meds to carry. What you carry counts towards it (partly used kits count for what they have left). Missing resource is filled in priority order: AFAK, Salewa, IFAK, Car, AI-2. AFAK and Salewa are 400, IFAK 300, Car 220, AI-2 100.", new AcceptableValueRange<int>(0, 2000)));
 			KitBandageResource = Config.Bind("6. Kit button", "3. Bandage points (0 disables)", 2,
-				new ConfigDescription("Bandage points to carry: an Army bandage is 2, an Aseptic bandage is 1. Army bandages are preferred.", new AcceptableValueRange<int>(0, 20)));
+				new ConfigDescription("Bandage points to carry: an Army bandage counts its remaining uses (2 when new), an Aseptic bandage is 1. Army bandages are preferred.", new AcceptableValueRange<int>(0, 20)));
 			KitHeavyBleedResource = Config.Bind("6. Kit button", "4. Heavy bleed points (0 disables)", 2,
-				new ConfigDescription("Heavy bleed points to carry: a CALOK-B is 2, a CAT or an Esmarch tourniquet is 1. Preference: CALOK-B, CAT, Esmarch.", new AcceptableValueRange<int>(0, 20)));
+				new ConfigDescription("Heavy bleed points to carry: a CALOK-B counts its remaining uses (3 when new), a CAT or an Esmarch tourniquet is 1. Preference: CALOK-B, CAT, Esmarch.", new AcceptableValueRange<int>(0, 20)));
 			KitPropital = Config.Bind("6. Kit button", "5. Propital (0 disables)", 1,
 				new ConfigDescription("How many Propital injectors to carry.", new AcceptableValueRange<int>(0, 10)));
-			KitGrenades = Config.Bind("6. Kit button", "6. Grenades (0 disables)", 2,
-				new ConfigDescription("How many grenades to carry, taken in the order M67, RGD-5, F-1, VOG-17/25.", new AcceptableValueRange<int>(0, 10)));
+			KitGrenadeCounts = KitGrenadeTypes
+				.Select((grenade, index) => Config.Bind("6b. Kit grenades", $"{index + 1}. {grenade.Name} (0 disables)", grenade.Default,
+					new ConfigDescription($"How many {grenade.Name} grenades to carry. Any combination of grenade types can be set.", new AcceptableValueRange<int>(0, 10))))
+				.ToArray();
 			KitAllowOvershoot = Config.Bind("6. Kit button", "7. Allow overshoot", true,
 				"When the missing amount is smaller than the next item in priority (e.g. 1 point missing and an Army bandage is next), take it anyway. When off, it skips to a smaller item that fits, or takes nothing.");
 

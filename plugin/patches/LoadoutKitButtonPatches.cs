@@ -35,6 +35,8 @@ namespace CustomRpTweaks.Client.Patches
 
 				if (existing != null)
 				{
+					// The panel is reused, but its controller changes after a raid or a profile reload: point the button at the current one
+					existing.GetComponent<ClickHandler>().OnClick = () => LoadoutKit.Run(inventoryController);
 					existing.gameObject.SetActive(show);
 					return;
 				}
