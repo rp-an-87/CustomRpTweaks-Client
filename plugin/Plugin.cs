@@ -34,24 +34,28 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<int> KitBandageResource;
 		internal static ConfigEntry<int> KitHeavyBleedResource;
 		internal static ConfigEntry<int> KitPropital;
-		// Grenade types the kit can bring, one amount each. A type with several grenades takes whichever of them the stash has, at random.
-		internal static readonly (string[] Templates, string Name, int Default)[] KitGrenadeTypes =
+		// Grenade types the kit can bring, a minimum each. A type with several grenades takes whichever of them the stash has, at random.
+		// Impact grenades are left out of the quota's random picks.
+		internal static readonly (string[] Templates, string Name, int Default, bool Impact)[] KitGrenadeTypes =
 		{
-			(new[] { "58d3db5386f77426186285a0" }, "M67", 2),
-			(new[] { "5448be9a4bdc2dfd2f8b456a" }, "RGD-5", 0),
-			(new[] { "5710c24ad2720bc3458b45a3" }, "F-1", 0),
-			(new[] { "5e32f56fcb6d5863cc5e5ee4", "5e340dcdcb6d5863cc5e5efb" }, "VOG-17 / VOG-25 (random)", 0),
-			(new[] { "617fd91e5539a84ec44ce155", "618a431df1eb8e24b8741deb" }, "Impact RGN / RGO (random)", 0),
+			(new[] { "58d3db5386f77426186285a0" }, "M67", 2, false),
+			(new[] { "5448be9a4bdc2dfd2f8b456a" }, "RGD-5", 0, false),
+			(new[] { "5710c24ad2720bc3458b45a3" }, "F-1", 0, false),
+			(new[] { "5e32f56fcb6d5863cc5e5ee4", "5e340dcdcb6d5863cc5e5efb" }, "VOG-17 / VOG-25 (random)", 0, false),
+			(new[] { "617fd91e5539a84ec44ce155", "618a431df1eb8e24b8741deb" }, "Impact RGN / RGO (random)", 0, true),
 		};
 		internal static ConfigEntry<int>[] KitGrenadeCounts;
+		internal static ConfigEntry<int> KitGrenadeQuota;
 		internal static ConfigEntry<bool> KitAllowOvershoot;
 		internal static ConfigEntry<bool> KitSwapWorse;
 
 		internal static ConfigEntry<KeyboardShortcut> TopUpMagazine;
+		internal static ConfigEntry<KeyboardShortcut> RepairWithKitHotkey;
 
 		private void Update()
 		{
 			MagazineTopUp.Update();
+			RepairWithKit.Update();
 		}
 
 		private void Awake()
@@ -104,8 +108,10 @@ namespace CustomRpTweaks.Client
 				new ConfigDescription("How many Propital injectors to carry.", new AcceptableValueRange<int>(0, 10)));
 			KitGrenadeCounts = KitGrenadeTypes
 				.Select((grenade, index) => Config.Bind("6b. Kit grenades", $"{index + 1}. {grenade.Name} (0 disables)", grenade.Default,
-					new ConfigDescription($"How many {grenade.Name} grenades to carry. Any combination of the types can be set; a type with two grenades takes whichever the stash has, at random.", new AcceptableValueRange<int>(0, 10))))
+					new ConfigDescription($"At least this many {grenade.Name} grenades to carry, as far as the stash has them. Any combination of the types can be set; a type with two grenades takes whichever the stash has, at random. The grenade quota below tops up the rest.", new AcceptableValueRange<int>(0, 10))))
 				.ToArray();
+			KitGrenadeQuota = Config.Bind("6b. Kit grenades", "0. Grenade quota (0 disables)", 0,
+				new ConfigDescription("Total grenades to carry. The 'at least' amounts below are brought first; if you carry fewer than the quota afterwards (say you ran out of M67), random grenades from the stash make up the difference, from the non-impact types (M67, RGD-5, F-1, VOG-17/25). Every grenade of the types below that you carry counts towards the quota. Non-FiR grenades are preferred.", new AcceptableValueRange<int>(0, 10)));
 			KitAllowOvershoot = Config.Bind("6. Kit button", "7. Allow overshoot", true,
 				"When the missing amount is smaller than the next item in priority (e.g. 1 point missing and an Army bandage is next), take it anyway. When off, it skips to a smaller item that fits, or takes nothing.");
 
@@ -120,6 +126,9 @@ namespace CustomRpTweaks.Client
 
 			TopUpMagazine = Config.Bind("7. Magazine top-up", "1. Top-up hotkey", new KeyboardShortcut(KeyCode.T),
 				"Hover a magazine in the stash or in a raid inventory and press this to fill it up. It uses the ammo the magazine already holds, or else the highest-penetration ammo it accepts, taken from the stash and your gear. In a raid it is the normal timed load. Unassign the key to turn the feature off.");
+
+			RepairWithKitHotkey = Config.Bind("7b. Repair with kit", "1. Repair hotkey", new KeyboardShortcut(KeyCode.R),
+				"Hover an item in the stash and press this to repair it fully with one of your repair kits, without opening the repair window (the same repair as the window's button, as far as the kits can pay for). It uses the kit with the least resource left that can repair the item. Does nothing if you have no suitable kit, or outside the hideout/menu stash. Unassign the key to turn the feature off.");
 
 			new StashSortOverlayPatch().Enable();
 			new StashSortReservePatches.SortPatch().Enable();

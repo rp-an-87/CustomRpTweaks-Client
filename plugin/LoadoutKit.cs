@@ -84,7 +84,7 @@ namespace CustomRpTweaks.Client
 		private static bool _running;
 		private static int _swapped;
 
-		internal static bool AnyGroupEnabled => Groups.Any(group => group.Target() > 0);
+		internal static bool AnyGroupEnabled => Groups.Any(group => group.Target() > 0) || Plugin.KitGrenadeQuota.Value > 0;
 
 		internal static async void Run(InventoryController controller)
 		{
@@ -161,6 +161,52 @@ namespace CustomRpTweaks.Client
 						need -= weight;
 						moved++;
 					}
+				}
+			}
+
+			return moved + await FillGrenadeQuota(controller, inventory, targets);
+		}
+
+		// Tops the grenades up to the quota with random non-impact ones from the stash. Every kit grenade carried counts
+		// (impact ones too), and runs after the groups so the minimums come first.
+		private static async Task<int> FillGrenadeQuota(InventoryController controller, Inventory inventory, List<CompoundItem> targets)
+		{
+			int quota = Plugin.KitGrenadeQuota.Value;
+			if (quota <= 0)
+			{
+				return 0;
+			}
+
+			var allTemplates = new HashSet<string>(Plugin.KitGrenadeTypes.SelectMany(grenade => grenade.Templates));
+			int need = quota - CarriedItems(inventory).Count(item => allTemplates.Contains(item.TemplateId.ToString()));
+
+			// One pile per non-impact type, non-FiR first. A random type is picked before a grenade, so a type the stash has
+			// many of (say M67) isn't picked more often than the others.
+			var stash = inventory.GetPlayerItems(EPlayerItems.Stash).ToList();
+			var piles = Plugin.KitGrenadeTypes
+				.Where(grenade => !grenade.Impact)
+				.Select(grenade => new Queue<Item>(stash
+					.Where(item => grenade.Templates.Contains(item.TemplateId.ToString()))
+					.OrderBy(item => item.MarkedAsSpawnedInSession ? 1 : 0)
+					.ThenBy(_ => Guid.NewGuid())))
+				.Where(pile => pile.Count > 0)
+				.ToList();
+			Plugin.Log.LogInfo($"Kit: grenade quota {quota}, missing {Math.Max(need, 0)}, {piles.Sum(pile => pile.Count)} candidates of {piles.Count} type(s) in stash");
+
+			int moved = 0;
+			while (need > 0 && piles.Count > 0)
+			{
+				var pile = piles[UnityEngine.Random.Range(0, piles.Count)];
+				var item = pile.Dequeue();
+				if (pile.Count == 0)
+				{
+					piles.Remove(pile);
+				}
+
+				if (await MoveToTargets(controller, item, targets))
+				{
+					need--;
+					moved++;
 				}
 			}
 
