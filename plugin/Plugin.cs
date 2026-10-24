@@ -178,7 +178,7 @@ namespace CustomRpTweaks.Client
 			DisassembleRecursive = Config.Bind("10. Disassemble", "2. Take off parts recursively", true,
 				"On: the parts that came off are taken apart too (a scope on a mount on a rail), until nothing more can come off. Off: only the parts attached directly to the item you hover are taken off.");
 			DisassembleInRaid = Config.Bind("10. Disassemble", "3. Allow in a raid", true,
-				"Also works in a raid inventory, with the game's own raid rules: parts that can't be modded in a raid, vital parts and locked armor slots stay, and nothing below them is touched. Parts of an item you carry or of a dead body go to your or its pockets, vest and backpack, if there is room.");
+				"Also works in a raid inventory, with the game's own raid rules: parts that can't be modded in a raid, vital parts and locked armor slots stay on, but the parts attached to them can still come off (a scope off a receiver that has to stay). Parts of an item you carry or of a dead body go to your or its pockets, vest and backpack, if there is room.");
 
 			EquipPlateHotkey = Config.Bind("11. Equip plate", "1. Equip plate hotkey", new KeyboardShortcut(KeyCode.I),
 				"Hover an armor plate in the stash and press this to put it into the first free plate slot of the armor, rig or helmet you wear that accepts it. The game's own rules decide what fits. Not in a raid. Unassign the key to turn the feature off.");

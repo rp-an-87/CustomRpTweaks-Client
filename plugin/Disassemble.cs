@@ -14,7 +14,7 @@ namespace CustomRpTweaks.Client
 	// Hotkey on a hovered item: detaches the parts attached to it and puts them next to it, in the container the item lies in.
 	// Recursive mode goes on with the parts that came off (a scope on a mount on a rail), until nothing more can be taken off.
 	// Every move is the game's own, so what it refuses (in a raid: parts that can't be modded, vital parts, locked armor slots)
-	// stays attached, and nothing below such a part is touched. Magazines keep their ammo and containers keep their contents.
+	// stays attached, but the parts attached to it can still come off. Magazines keep their ammo and containers keep their contents.
 	internal static class Disassemble
 	{
 		private const int MaxMoves = 300;
@@ -72,7 +72,8 @@ namespace CustomRpTweaks.Client
 					queue.Enqueue(item);
 				}
 
-				while (queue.Count > 0 && tally.Attempts < MaxMoves)
+				var holders = 0;
+				while (queue.Count > 0 && tally.Attempts < MaxMoves && holders++ < MaxMoves)
 				{
 					var holder = queue.Dequeue();
 					foreach (var slot in holder.Slots.ToList())
@@ -83,7 +84,10 @@ namespace CustomRpTweaks.Client
 							continue;
 						}
 
-						if (await TakeOff(controller, part, targets, tally) && recursive && part is CompoundItem compound && !(part is Magazine))
+						// A part that has to stay (vital, not moddable in a raid, no room) still gets its own parts taken off:
+						// a scope comes off a receiver that can't. Only a part that was not examined is left alone.
+						var moved = await TakeOff(controller, part, targets, tally);
+						if (recursive && part is CompoundItem compound && !(part is Magazine) && (moved || controller.Examined(part)))
 						{
 							queue.Enqueue(compound);
 						}
@@ -124,6 +128,17 @@ namespace CustomRpTweaks.Client
 			if (!controller.Examined(part))
 			{
 				tally.Unexamined++;
+				return false;
+			}
+
+			// The game's raid rules for taking a part off, checked first: they hold wherever the part would go, and without this
+			// a part the rules forbid could be reported as "no room" whenever it is too big for the free space
+			var forbidden = RaidRuleViolation(part);
+			if (forbidden != null)
+			{
+				tally.Refused++;
+				tally.FirstRefusal = tally.FirstRefusal ?? forbidden;
+				Plugin.Log.LogInfo($"Disassemble: {NameOf(part)} stays ({forbidden})");
 				return false;
 			}
 
@@ -171,6 +186,22 @@ namespace CustomRpTweaks.Client
 			}
 
 			return false;
+		}
+
+		// The raid-only part of the game's move rules (ItemManipulator.MovePathCheck): parts that can't be modded in a raid, and vital slots
+		private static string RaidRuleViolation(Item part)
+		{
+			if (!InGameStatus.InRaid || !(part.Parent is SlotItemAddress address))
+			{
+				return null;
+			}
+
+			if (part is Mod mod && !mod.RaidModdable)
+			{
+				return "can't be modded in a raid";
+			}
+
+			return address.Slot.Required ? "vital part" : null;
 		}
 
 		// Attached in a slot of an item that is not the character's equipment (a mod on a weapon, a plate in armor, an insert)
