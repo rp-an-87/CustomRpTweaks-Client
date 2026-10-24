@@ -73,6 +73,12 @@ namespace CustomRpTweaks.Client
 
 		internal static ConfigEntry<KeyboardShortcut> EquipPlateHotkey;
 
+		internal static ConfigEntry<bool> PriceIndicator;
+		internal static ConfigEntry<string> PriceIndicatorNewColor;
+		internal static ConfigEntry<int> PriceIndicatorTraderSize;
+		internal static ConfigEntry<bool> PriceIndicatorTooltip;
+		internal static ConfigEntry<string> PriceIndicatorOldColor;
+
 		private void Update()
 		{
 			MagazineTopUp.Update();
@@ -199,6 +205,22 @@ namespace CustomRpTweaks.Client
 			new SkillNotificationPatches.WeaponMasteredPatch().Enable();
 			new SkillNotificationPatches.ClientPlayerSkillLevelChangedPatch().Enable();
 			new SkillNotificationPatches.ClientPlayerWeaponMasteredPatch().Enable();
+
+			PriceIndicator = Config.Bind("12. Price indicator", "1. Colour prices the server has raised", true,
+				"Needs the CustomRpTweaks server mod with its trader overstock feature on. Prices the server has raised for you are drawn in the colour below, on the trader screen and in the flea market. The client works out which prices are raised from the prices it has seen, and asks the server once per game session (right after the first trader offers or flea results load) for offers that were already raised when the game started. If the server mod is missing or has the feature or its 'clientIndicator' option off, the client stops asking and shows nothing extra until the game restarts. Applies from the next load of the offers.");
+			PriceIndicatorNewColor = Config.Bind("12. Price indicator", "2. Raised price colour", "#FF9A3C", "Colour of the raised price, as #RRGGBB.");
+			PriceIndicatorTraderSize = Config.Bind("12. Price indicator", "3. Trader screen: raised price size (%)", 125,
+				new ConfigDescription("Size of a raised price under an item in the trader's grid, as a percentage of a normal price (100 = same size), so the increase is easier to spot.", new AcceptableValueRange<int>(80, 150)));
+			PriceIndicatorTooltip = Config.Bind("12. Price indicator", "4. Trader screen: base price in the tooltip", true,
+				"Hover an item in the trader's grid: when its price has been raised, the tooltip shows the base price, struck through, before the raised price.");
+			PriceIndicatorOldColor = Config.Bind("12. Price indicator", "5. Tooltip base price colour", "#FFFF00", "Colour of the struck-through base price in the tooltip, as #RRGGBB.");
+
+			new OverstockPricePatches.TraderOffersHook().Enable();
+			new OverstockPricePatches.FleaOffersHook().Enable();
+			new OverstockPricePatches.FleaPurchaseRefreshPatch().Enable();
+			new OverstockPricePatches.TraderGridPricePatch().Enable();
+			new OverstockPricePatches.TraderTooltipPatch().Enable();
+			new OverstockPricePatches.FleaRowPricePatch().Enable();
 		}
 	}
 }
