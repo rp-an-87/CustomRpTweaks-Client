@@ -58,7 +58,7 @@ namespace CustomRpTweaks.Client.Patches
 				click.OnClick = () => LoadoutKit.Run(inventoryController);
 
 				var hover = clone.GetComponent<HoverTrigger>() ?? clone.AddComponent<HoverTrigger>();
-				hover.OnHoverStart += _ => ItemUiContext.Instance.Tooltip.Show("Bring your preset consumables from the stash into pockets and vest", null, 0.25f, null);
+				hover.OnHoverStart += _ => ItemUiContext.Instance.Tooltip.Show("Bring your preset consumables and raid cash from the stash into your gear", null, 0.25f, null);
 				hover.OnHoverEnd += _ => ItemUiContext.Instance.Tooltip.Close();
 			}
 			catch (Exception e)

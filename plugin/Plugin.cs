@@ -1,5 +1,6 @@
 using System.Linq;
 using BepInEx;
+using BepInEx.Bootstrap;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using UnityEngine;
@@ -8,6 +9,7 @@ using CustomRpTweaks.Client.Patches;
 namespace CustomRpTweaks.Client
 {
 	[BepInPlugin(PluginGuid, PluginName, PluginVersion)]
+	[BepInDependency(LoadAmmoSkillSpeed.TargetGuid, BepInDependency.DependencyFlags.SoftDependency)]
 	public class Plugin : BaseUnityPlugin
 	{
 		public const string PluginGuid = "RPAN87.CustomRpTweaks";
@@ -46,16 +48,38 @@ namespace CustomRpTweaks.Client
 		};
 		internal static ConfigEntry<int>[] KitGrenadeCounts;
 		internal static ConfigEntry<int> KitGrenadeQuota;
+		// Money the kit keeps in the docs/SICC case or wallet you carry: template, name, default amount
+		internal static readonly (string Template, string Name, int Default)[] KitCashCurrencies =
+		{
+			("5449016a4bdc2d6f028b456f", "RUB", 75000),
+			("569668774bdc2da2298b4568", "EUR", 0),
+			("5696686a4bdc2da3298b456a", "USD", 0),
+		};
+		internal static ConfigEntry<int>[] KitCashTargets;
 		internal static ConfigEntry<bool> KitAllowOvershoot;
 		internal static ConfigEntry<bool> KitSwapWorse;
 
+		internal static ConfigEntry<bool> ScaleLoadAmmoSpeed;
+		internal static ConfigEntry<float> LoadAmmoSpeedAtLevel0;
+		internal static ConfigEntry<float> LoadAmmoSpeedAtLevel50;
+		internal static ConfigEntry<float> LoadAmmoSpeedAtElite;
+
 		internal static ConfigEntry<KeyboardShortcut> TopUpMagazine;
 		internal static ConfigEntry<KeyboardShortcut> RepairWithKitHotkey;
+
+		internal static ConfigEntry<KeyboardShortcut> DisassembleHotkey;
+		internal static ConfigEntry<bool> DisassembleRecursive;
+		internal static ConfigEntry<bool> DisassembleInRaid;
+
+		internal static ConfigEntry<KeyboardShortcut> EquipPlateHotkey;
 
 		private void Update()
 		{
 			MagazineTopUp.Update();
 			RepairWithKit.Update();
+			LoadAmmoSkillSpeed.Update();
+			Disassemble.Update();
+			EquipPlate.Update();
 		}
 
 		private void Awake()
@@ -112,6 +136,10 @@ namespace CustomRpTweaks.Client
 				.ToArray();
 			KitGrenadeQuota = Config.Bind("6b. Kit grenades", "0. Grenade quota (0 disables)", 0,
 				new ConfigDescription("Total grenades to carry. The 'at least' amounts below are brought first; if you carry fewer than the quota afterwards (say you ran out of M67), random grenades from the stash make up the difference, from the non-impact types (M67, RGD-5, F-1, VOG-17/25). Every grenade of the types below that you carry counts towards the quota. Non-FiR grenades are preferred.", new AcceptableValueRange<int>(0, 10)));
+			KitCashTargets = KitCashCurrencies
+				.Select((currency, index) => Config.Bind("6c. Kit cash", $"{index + 1}. {currency.Name} in your case (0 disables)", currency.Default,
+					new ConfigDescription($"{currency.Name} to carry in a docs case, SICC case or wallet (also the WZ wallet) on your character, say for coop extracts. Money already in the case counts; the missing amount is moved from the stash (a part of a stack is split off). One of the cases is used, one that already holds the money first. Warns if the stash has less.", new AcceptableValueRange<int>(0, 10000000))))
+				.ToArray();
 			KitAllowOvershoot = Config.Bind("6. Kit button", "7. Allow overshoot", true,
 				"When the missing amount is smaller than the next item in priority (e.g. 1 point missing and an Army bandage is next), take it anyway. When off, it skips to a smaller item that fits, or takes nothing.");
 
@@ -124,11 +152,36 @@ namespace CustomRpTweaks.Client
 				"The mouse wheel changes both your walk speed and the zoom of a smooth-zoom scope. With this on, the wheel does not change your walk speed while you aim through a smooth-zoom (variable) scope and hold your scope zoom key combination (for example Alt + wheel). The wheel alone, other sights and not aiming are not affected.");
 			new ScopeZoomSpeedPatch().Enable();
 
+			// Only offered when Continuous Load Ammo is installed (it is a soft dependency, so it has loaded before us)
+			if (Chainloader.PluginInfos.ContainsKey(LoadAmmoSkillSpeed.TargetGuid))
+			{
+				ScaleLoadAmmoSpeed = Config.Bind("9. Loading ammo", "1. Scale loading walk speed with Mag Drills", false,
+					"Needs the Continuous Load Ammo mod. While you load ammo outside the inventory, your walk speed is limited to a share of your current top walking speed (already reduced by your weight). With this on, that share depends on your Mag Drills level, using the three values below, instead of Continuous Load Ammo's own fixed 'Speed Limit'. Its setting is changed in memory only, its config file isn't touched. Applies from the next load you start.");
+				LoadAmmoSpeedAtLevel0 = Config.Bind("9. Loading ammo", "2. Loading speed at Mag Drills level 0", 0.2f,
+					new ConfigDescription("Share of your current top walking speed while loading ammo at Mag Drills level 0 (0.2 = 20%). Rises evenly up to the level 50 value.", new AcceptableValueRange<float>(0f, 1f)));
+				LoadAmmoSpeedAtLevel50 = Config.Bind("9. Loading ammo", "3. Loading speed at Mag Drills level 50", 0.7f,
+					new ConfigDescription("Share of your current top walking speed while loading ammo at Mag Drills level 50 (0.7 = 70%).", new AcceptableValueRange<float>(0f, 1f)));
+				LoadAmmoSpeedAtElite = Config.Bind("9. Loading ammo", "4. Loading speed at Mag Drills level 51 (elite)", 0.9f,
+					new ConfigDescription("Share of your unencumbered walking speed (not reduced by weight, so weight can still cap it) while loading ammo at the elite Mag Drills level 51 (0.9 = 90%). Unlike the lower levels this one is absolute.", new AcceptableValueRange<float>(0f, 1f)));
+				new LoadAmmoSkillUiPatches.SkillTooltipShowPatch().Enable();
+				new LoadAmmoSkillUiPatches.BuffDescriptionPatch().Enable();
+			}
+
 			TopUpMagazine = Config.Bind("7. Magazine top-up", "1. Top-up hotkey", new KeyboardShortcut(KeyCode.T),
 				"Hover a magazine in the stash or in a raid inventory and press this to fill it up. It uses the ammo the magazine already holds, or else the highest-penetration ammo it accepts, taken from the stash and your gear. In a raid it is the normal timed load. Unassign the key to turn the feature off.");
 
 			RepairWithKitHotkey = Config.Bind("7b. Repair with kit", "1. Repair hotkey", new KeyboardShortcut(KeyCode.R),
 				"Hover an item in the stash and press this to repair it fully with one of your repair kits, without opening the repair window (the same repair as the window's button, as far as the kits can pay for). It uses the kit with the least resource left that can repair the item. Does nothing if you have no suitable kit, or outside the hideout/menu stash. Unassign the key to turn the feature off.");
+
+			DisassembleHotkey = Config.Bind("10. Disassemble", "1. Disassemble hotkey", new KeyboardShortcut(KeyCode.D, KeyCode.LeftAlt),
+				"Hover an item and press this to take off the parts attached to it (a weapon's mods, an armor's plates and other removable parts) and put them next to it, in the container it lies in. Magazines keep their ammo and containers keep their contents. Parts the game won't let you remove stay on. Unassign the key to turn the feature off.");
+			DisassembleRecursive = Config.Bind("10. Disassemble", "2. Take off parts recursively", true,
+				"On: the parts that came off are taken apart too (a scope on a mount on a rail), until nothing more can come off. Off: only the parts attached directly to the item you hover are taken off.");
+			DisassembleInRaid = Config.Bind("10. Disassemble", "3. Allow in a raid", true,
+				"Also works in a raid inventory, with the game's own raid rules: parts that can't be modded in a raid, vital parts and locked armor slots stay, and nothing below them is touched. Parts of an item you carry or of a dead body go to your or its pockets, vest and backpack, if there is room.");
+
+			EquipPlateHotkey = Config.Bind("11. Equip plate", "1. Equip plate hotkey", new KeyboardShortcut(KeyCode.I),
+				"Hover an armor plate in the stash and press this to put it into the first free plate slot of the armor, rig or helmet you wear that accepts it. The game's own rules decide what fits. Not in a raid. Unassign the key to turn the feature off.");
 
 			new StashSortOverlayPatch().Enable();
 			new StashSortReservePatches.SortPatch().Enable();

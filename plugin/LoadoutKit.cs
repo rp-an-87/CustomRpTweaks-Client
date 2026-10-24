@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Diz.LanguageExtensions;
 using EFT;
 using EFT.Communications;
 using EFT.InventoryLogic;
@@ -83,8 +84,12 @@ namespace CustomRpTweaks.Client
 		private static Group[] _groups;
 		private static bool _running;
 		private static int _swapped;
+		private static string _cashSummary = string.Empty;
 
-		internal static bool AnyGroupEnabled => Groups.Any(group => group.Target() > 0) || Plugin.KitGrenadeQuota.Value > 0;
+		// Cases that can hold the raid cash, carried or in the secured container: Documents case, SICC case, wallet and WZ wallet
+		private static readonly string[] CashCaseTemplates = { "590c60fc86f77412b13fddcf", "5d235bb686f77443f4331278", "5783c43d2459774bbe137486", "60b0f6c058e0b0481a09ad11" };
+
+		internal static bool AnyGroupEnabled => Groups.Any(group => group.Target() > 0) || Plugin.KitGrenadeQuota.Value > 0 || Plugin.KitCashTargets.Any(target => target.Value > 0);
 
 		internal static async void Run(InventoryController controller)
 		{
@@ -98,8 +103,10 @@ namespace CustomRpTweaks.Client
 			try
 			{
 				_swapped = 0;
+				_cashSummary = string.Empty;
 				int moved = await Fetch(controller);
 				var message = moved + _swapped > 0 ? $"Kit: brought {moved} item(s), swapped {_swapped}." : "Kit: nothing to bring.";
+				message += _cashSummary;
 				NotificationManager.DisplayMessageNotification(message);
 			}
 			catch (Exception e)
@@ -164,7 +171,121 @@ namespace CustomRpTweaks.Client
 				}
 			}
 
-			return moved + await FillGrenadeQuota(controller, inventory, targets);
+			moved += await FillGrenadeQuota(controller, inventory, targets);
+			return moved + await FillCash(controller, inventory);
+		}
+
+		// Tops the money inside the carried cases up to the target of each currency, with exactly the missing amount from the stash.
+		// Money in the cases counts towards the target; any of the cases will do, one that already holds the currency first.
+		private static async Task<int> FillCash(InventoryController controller, Inventory inventory)
+		{
+			if (Plugin.KitCashTargets.All(target => target.Value <= 0))
+			{
+				return 0;
+			}
+
+			var cases = CarriedItems(inventory).Concat(SecuredItems(inventory)).OfType<CompoundItem>().Where(item => CashCaseTemplates.Contains(item.TemplateId.ToString())).ToList();
+			if (cases.Count == 0)
+			{
+				Plugin.Log.LogInfo("Kit: no cash case carried");
+				_cashSummary += " Cash: no docs/SICC case or wallet on you.";
+				return 0;
+			}
+
+			int moved = 0;
+			for (int index = 0; index < Plugin.KitCashCurrencies.Length; index++)
+			{
+				var (template, name, _) = Plugin.KitCashCurrencies[index];
+				int target = Plugin.KitCashTargets[index].Value;
+				if (target <= 0)
+				{
+					continue;
+				}
+
+				int need = target - cases.Sum(container => MoneyIn(container, template));
+				Plugin.Log.LogInfo($"Kit: cash {name}: target {target}, missing {Math.Max(need, 0)}");
+				foreach (var stack in inventory.GetPlayerItems(EPlayerItems.Stash).Where(item => item.TemplateId.ToString() == template && item.PinLockState != EItemPinLockState.Locked).OrderBy(item => item.StackObjectsCount).ToList())
+				{
+					if (need <= 0)
+					{
+						break;
+					}
+
+					int take = Math.Min(need, stack.StackObjectsCount);
+					int placed = await MoveCash(controller, stack, take, cases, template);
+					if (placed > 0)
+					{
+						need -= placed;
+						moved++;
+					}
+				}
+
+				if (need > 0)
+				{
+					_cashSummary += $" Cash: {need} {name} short.";
+				}
+			}
+
+			return moved;
+		}
+
+		private static int MoneyIn(CompoundItem container, string template) =>
+			container.GetAllItems().Where(item => item != container && item.TemplateId.ToString() == template).Sum(item => item.StackObjectsCount);
+
+		// Moves count of the stack into the first case that takes it: merged into a stack of the same money when there is room
+		// for all of it, otherwise as a split into a free spot of the case. Returns how much was moved.
+		private static async Task<int> MoveCash(InventoryController controller, Item stack, int count, List<CompoundItem> cases, string template)
+		{
+			foreach (var container in cases.OrderByDescending(container => MoneyIn(container, template)))
+			{
+				var existing = container.GetAllItems().FirstOrDefault(item => item != container && item.TemplateId.ToString() == template
+					&& item.PinLockState != EItemPinLockState.Locked && item.StackMaxSize - item.StackObjectsCount >= count);
+				OperationResult operation = default;
+				bool planned = false;
+				if (existing != null)
+				{
+					operation = ItemManipulator.TransferExact(stack, count, existing, controller, true);
+					planned = true;
+				}
+				else
+				{
+					foreach (var grid in container.Grids)
+					{
+						var address = grid.FindLocationForItem(stack);
+						if (address == null)
+						{
+							continue;
+						}
+
+						operation = stack.StackObjectsCount == count
+							? ItemManipulator.Move(stack, address, controller, true)
+							: ItemManipulator.SplitExact(stack, count, address, controller, controller, true);
+						planned = true;
+						if (operation.Succeeded)
+						{
+							break;
+						}
+					}
+				}
+
+				if (!planned || operation.Failed)
+				{
+					Plugin.Log.LogInfo($"Kit: cash {count} not placed in {container.ShortName.Localized()} ({operation.Error})");
+					continue;
+				}
+
+				var outcome = await controller.TryRunNetworkTransaction(operation);
+				if (outcome.Failed)
+				{
+					Plugin.Log.LogWarning($"Kit: moving cash failed ({outcome.Error})");
+					continue;
+				}
+
+				Plugin.Log.LogInfo($"Kit: moved {count} of {stack.ShortName.Localized()} into {container.ShortName.Localized()}");
+				return count;
+			}
+
+			return 0;
 		}
 
 		// Tops the grenades up to the quota with random non-impact ones from the stash. Every kit grenade carried counts
@@ -349,6 +470,10 @@ namespace CustomRpTweaks.Client
 				}
 			}
 		}
+
+		// What is inside the secured container (the pouch), where the docs/SICC case usually lives
+		private static IEnumerable<Item> SecuredItems(Inventory inventory) =>
+			inventory.Equipment.GetSlot(EquipmentSlot.SecuredContainer).ContainedItem?.GetAllItems() ?? Enumerable.Empty<Item>();
 
 		private static float WeightOf(Group group, Item item)
 		{
