@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Reflection;
 using BepInEx;
 using BepInEx.Bootstrap;
 using BepInEx.Configuration;
@@ -67,9 +68,10 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<KeyboardShortcut> TopUpMagazine;
 		internal static ConfigEntry<KeyboardShortcut> RepairWithKitHotkey;
 
-		internal static ConfigEntry<KeyboardShortcut> DisassembleHotkey;
-		internal static ConfigEntry<bool> DisassembleRecursive;
-		internal static ConfigEntry<bool> DisassembleInRaid;
+		internal static ConfigEntry<KeyboardShortcut> DismantleHotkey;
+		internal static ConfigEntry<KeyboardShortcut> DismantleNonVitalHotkey;
+		internal static ConfigEntry<bool> DismantleSelf;
+		internal static ConfigEntry<bool> DismantleInRaid;
 
 		internal static ConfigEntry<KeyboardShortcut> EquipPlateHotkey;
 
@@ -84,8 +86,22 @@ namespace CustomRpTweaks.Client
 			MagazineTopUp.Update();
 			RepairWithKit.Update();
 			LoadAmmoSkillSpeed.Update();
-			Disassemble.Update();
+			Dismantle.Update();
 			EquipPlate.Update();
+		}
+
+		// A renamed setting takes over the value it had under its old name, if the config file still has one
+		private void Migrate(ConfigEntryBase entry, string oldSection, string oldKey)
+		{
+			// BepInEx keeps what it read from the file but found no setting for here; the list isn't public
+			var orphaned = typeof(ConfigFile).GetProperty("OrphanedEntries", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(Config, null)
+				as System.Collections.Generic.Dictionary<ConfigDefinition, string>;
+			var oldDefinition = new ConfigDefinition(oldSection, oldKey);
+			if (orphaned != null && orphaned.TryGetValue(oldDefinition, out var value))
+			{
+				entry.SetSerializedValue(value);
+				orphaned.Remove(oldDefinition);
+			}
 		}
 
 		private void Awake()
@@ -179,12 +195,19 @@ namespace CustomRpTweaks.Client
 			RepairWithKitHotkey = Config.Bind("7b. Repair with kit", "1. Repair hotkey", new KeyboardShortcut(KeyCode.R),
 				"Hover an item in the stash and press this to repair it fully with one of your repair kits, without opening the repair window (the same repair as the window's button, as far as the kits can pay for). It uses the kit with the least resource left that can repair the item. Does nothing if you have no suitable kit, or outside the hideout/menu stash. Unassign the key to turn the feature off.");
 
-			DisassembleHotkey = Config.Bind("10. Disassemble", "1. Disassemble hotkey", new KeyboardShortcut(KeyCode.D, KeyCode.LeftAlt),
-				"Hover an item and press this to take off the parts attached to it (a weapon's mods, an armor's plates and other removable parts) and put them next to it, in the container it lies in. Magazines keep their ammo and containers keep their contents. Parts the game won't let you remove stay on. Unassign the key to turn the feature off.");
-			DisassembleRecursive = Config.Bind("10. Disassemble", "2. Take off parts recursively", true,
-				"On: the parts that came off are taken apart too (a scope on a mount on a rail), until nothing more can come off. Off: only the parts attached directly to the item you hover are taken off.");
-			DisassembleInRaid = Config.Bind("10. Disassemble", "3. Allow in a raid", true,
+			DismantleHotkey = Config.Bind("10. Dismantle", "1. Dismantle hotkey", new KeyboardShortcut(KeyCode.D, KeyCode.LeftAlt),
+				"Hover an item and press this to take off the parts attached to it (a weapon's mods, an armor's plates and other removable parts) and put them next to it, in the container it lies in. The item itself stays where it is, only what is attached to it comes off. Magazines keep their ammo and containers keep their contents. Parts the game won't let you remove stay on. Unassign the key to turn the feature off.");
+			DismantleNonVitalHotkey = Config.Bind("10. Dismantle", "4. Dismantle non-vital parts hotkey", new KeyboardShortcut(KeyCode.D, KeyCode.LeftControl, KeyCode.LeftAlt),
+				"Like the dismantle hotkey, but the vital parts (the ones in required slots, a receiver for instance) stay attached, in the stash as in a raid, and the parts attached to them still come off. Pressed with the keys of the other hotkey held too, this one wins. Unassign the key to turn the feature off.");
+			DismantleSelf = Config.Bind("10. Dismantle", "5. Take off the hovered part itself too", false,
+				"Off: only what is attached to the hovered item comes off, the item itself stays where it is (UI Fixes' uninstall shortcut takes off a single part). On: when the hovered item is itself a part attached to something (a handguard on a gun, a plate in armor), it comes off first and its own parts come off after it.");
+			DismantleInRaid = Config.Bind("10. Dismantle", "3. Allow in a raid", true,
 				"Also works in a raid inventory, with the game's own raid rules: parts that can't be modded in a raid, vital parts and locked armor slots stay on, but the parts attached to them can still come off (a scope off a receiver that has to stay). Parts of an item you carry or of a dead body go to your or its pockets, vest and backpack, if there is room.");
+
+			// The settings used to be called Disassemble: keep what was chosen
+			Migrate(DismantleHotkey, "10. Disassemble", "1. Disassemble hotkey");
+			Migrate(DismantleNonVitalHotkey, "10. Disassemble", "4. Disassemble non-vital parts hotkey");
+			Migrate(DismantleInRaid, "10. Disassemble", "3. Allow in a raid");
 
 			EquipPlateHotkey = Config.Bind("11. Equip plate", "1. Equip plate hotkey", new KeyboardShortcut(KeyCode.I),
 				"Hover an armor plate in the stash and press this to put it into the first free plate slot of the armor, rig or helmet you wear that accepts it. The game's own rules decide what fits. Not in a raid. Unassign the key to turn the feature off.");
