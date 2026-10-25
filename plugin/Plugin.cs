@@ -34,6 +34,7 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<int> TopRowsToKeepFree;
 		internal static ConfigEntry<bool> KitButton;
 		internal static ConfigEntry<bool> KeepSpeedWhileZooming;
+		internal static ConfigEntry<bool> SteadyAimHoldBreathFix;
 		internal static ConfigEntry<int> KitHealthResource;
 		internal static ConfigEntry<int> KitBandageResource;
 		internal static ConfigEntry<int> KitHeavyBleedResource;
@@ -179,6 +180,10 @@ namespace CustomRpTweaks.Client
 			KeepSpeedWhileZooming = Config.Bind("8. Movement", "1. Keep walk speed while zooming a scope", false,
 				"The mouse wheel changes both your walk speed and the zoom of a smooth-zoom scope. With this on, the wheel does not change your walk speed while you aim through a smooth-zoom (variable) scope and hold your scope zoom key combination (for example Alt + wheel). The wheel alone, other sights and not aiming are not affected.");
 			new ScopeZoomSpeedPatch().Enable();
+
+			SteadyAimHoldBreathFix = Config.Bind("16. Aiming", "1. Fix holding breath during the steady aim perk", true,
+				"The elite weapon draw perk (Aim Drills and weapon skills) steadies your aim for 3 seconds after you start aiming, but the game applies it even while you hold your breath, and the aim then drifts as the 3 seconds run out. With this on, holding your breath during those seconds steadies the aim as it normally does, and the perk applies again if you release the breath within them.");
+			new SteadyAimBreathPatch().Enable();
 
 			// Only offered when Continuous Load Ammo is installed (it is a soft dependency, so it has loaded before us)
 			if (Chainloader.PluginInfos.ContainsKey(LoadAmmoSkillSpeed.TargetGuid))

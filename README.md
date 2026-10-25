@@ -17,6 +17,7 @@ BepInEx client plugin companion of [CustomRpTweaks-Server](https://github.com/rp
 - **Split stack**: a hotkey (Ctrl+S) on a hovered stack (ammo, money, grenades, anything that stacks) splits it in half without the split dialog; the new stack goes next to it.
 - **Hotkey hints**: a small line below a separator at the end of an inventory item's tooltip lists the hotkeys of this mod that apply to that item right now (top up, repair, equip plate, dismantle), with the keys as configured. Can be turned off ("13. Hotkey hints"). With the UI Fixes mod installed, its item shortcuts that work on the hovered item (open, use, unload, top up ammo, install and uninstall mods, unpack, pin, lock and more) are listed too, with the keys set in UI Fixes ("14. UI Fixes hints": each shortcut can be switched off, and the number of hints is capped).
 - **Keep walk speed while zooming**: optionally ignores the mouse-wheel walk speed change while you aim through a smooth-zoom scope and hold your scope zoom key combination (for example Alt + wheel).
+- **Steady aim and holding breath**: the elite weapon draw perk (Aim Drills and weapon skills) steadies the aim for 3 seconds after you start aiming, but the game applies it even while you hold your breath, and the aim then drifts as the 3 seconds run out. With this on (default), holding breath during those seconds steadies the aim as normal, and the perk applies again if you release the breath within them.
 
 ## Build
 
