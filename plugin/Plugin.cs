@@ -11,6 +11,7 @@ namespace CustomRpTweaks.Client
 {
 	[BepInPlugin(PluginGuid, PluginName, PluginVersion)]
 	[BepInDependency(LoadAmmoSkillSpeed.TargetGuid, BepInDependency.DependencyFlags.SoftDependency)]
+	[BepInDependency(UiFixesHints.TargetGuid, BepInDependency.DependencyFlags.SoftDependency)]
 	public class Plugin : BaseUnityPlugin
 	{
 		public const string PluginGuid = "RPAN87.CustomRpTweaks";
@@ -76,6 +77,8 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<KeyboardShortcut> EquipPlateHotkey;
 
 		internal static ConfigEntry<KeyboardShortcut> SplitHotkey;
+
+		internal static ConfigEntry<bool> HotkeyHints;
 
 		internal static ConfigEntry<bool> PriceIndicator;
 		internal static ConfigEntry<string> PriceIndicatorNewColor;
@@ -234,6 +237,14 @@ namespace CustomRpTweaks.Client
 			new SkillNotificationPatches.WeaponMasteredPatch().Enable();
 			new SkillNotificationPatches.ClientPlayerSkillLevelChangedPatch().Enable();
 			new SkillNotificationPatches.ClientPlayerWeaponMasteredPatch().Enable();
+
+			HotkeyHints = Config.Bind("13. Hotkey hints", "1. Show hotkey hints in item tooltips", true,
+				"Adds a small line below a separator at the end of the tooltip of an item in your inventory with the hotkeys of this mod that apply to it right now: top up (a magazine that isn't full), repair (a damaged item that one of your kits can repair), equip plate, and dismantle (an item with attached parts; the keep-vital one only when some of them are in required slots). The keys shown are the ones configured. Not shown for items of traders, the flea market or the mail. Turn it off if another mod's tooltip lines clash with it.");
+			// Only offered when UI Fixes is installed (a soft dependency, so it has loaded before us)
+			UiFixesHints.Setup(Config);
+			new HotkeyHintPatches.HoverEnterPatch().Enable();
+			new HotkeyHintPatches.HoverExitPatch().Enable();
+			new HotkeyHintPatches.TooltipShowPatch().Enable();
 
 			PriceIndicator = Config.Bind("12. Price indicator", "1. Colour prices the server has raised", true,
 				"Needs the CustomRpTweaks server mod with its trader overstock feature on. Prices the server has raised for you are drawn in the colour below, on the trader screen and in the flea market. The client works out which prices are raised from the prices it has seen, and asks the server once per game session (right after the first trader offers or flea results load) for offers that were already raised when the game started. If the server mod is missing or has the feature or its 'clientIndicator' option off, the client stops asking and shows nothing extra until the game restarts. Applies from the next load of the offers.");

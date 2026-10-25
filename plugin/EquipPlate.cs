@@ -19,6 +19,28 @@ namespace CustomRpTweaks.Client
 
 		private static bool _running;
 
+		// Whether the hotkey would do something for the item: a plate that isn't worn yet and a worn armor with a slot that takes it
+		internal static bool IsApplicable(InventoryController controller, Item item)
+		{
+			if (!(item is ArmorPlate plate) || controller?.Inventory.Stash == null || InGameStatus.InRaid || IsWorn(plate))
+			{
+				return false;
+			}
+
+			foreach (var armor in WornArmor(controller.Inventory.Equipment))
+			{
+				foreach (var slot in armor.AllSlots)
+				{
+					if (slot.CanAccept(plate) && !ItemManipulator.Move(plate, slot.CreateItemAddress(), controller, true).Failed)
+					{
+						return true;
+					}
+				}
+			}
+
+			return false;
+		}
+
 		internal static void Update()
 		{
 			if (_running || !Plugin.EquipPlateHotkey.Value.IsDown())

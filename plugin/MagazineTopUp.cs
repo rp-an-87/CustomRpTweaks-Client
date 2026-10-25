@@ -19,6 +19,9 @@ namespace CustomRpTweaks.Client
 
 		private static bool _running;
 
+		// A magazine that isn't full (whether there is ammo to fill it is looked for when the hotkey is pressed)
+		internal static bool IsApplicable(Item item) => item is Magazine magazine && magazine.Count < magazine.MaxCount;
+
 		internal static void Update()
 		{
 			if (!Plugin.TopUpMagazine.Value.IsDown())

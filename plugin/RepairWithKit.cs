@@ -35,13 +35,36 @@ namespace CustomRpTweaks.Client
 			var itemContext = uiContext?.CurrentItemContext;
 			var controller = uiContext == null ? null : ControllerField.GetValue(uiContext) as InventoryController;
 			var repairController = uiContext?.Session?.RepairController;
-			if (itemContext == null || repairController == null || controller?.Inventory.Stash == null || itemContext.Item is RepairKit)
+			var kit = FindKit(uiContext, itemContext, controller, false);
+			if (kit == null || repairController == null)
 			{
 				return;
 			}
 
-			var item = itemContext.Item;
-			var repairables = item.GetItemComponentsInChildren<RepairableComponent>(true).ToList();
+			Run(repairController, itemContext.Item, kit);
+		}
+
+		// Whether the hotkey would do something for the item: it is damaged and one of your kits can repair it
+		internal static bool IsApplicable(ItemUiContext uiContext, InventoryController controller, Item item)
+		{
+			var itemContext = uiContext.CurrentItemContext;
+			return itemContext != null && itemContext.Item == item && FindKit(uiContext, itemContext, controller, true) != null;
+		}
+
+		// The kit the hotkey uses, or null when there is nothing to do: the least used kit that can repair the item
+		private static RepairKit FindKit(ItemUiContext uiContext, ItemContext itemContext, InventoryController controller, bool onlyDamaged)
+		{
+			if (uiContext == null || itemContext == null || uiContext.Session?.RepairController == null || controller?.Inventory.Stash == null || itemContext.Item is RepairKit)
+			{
+				return null;
+			}
+
+			var repairables = itemContext.Item.GetItemComponentsInChildren<RepairableComponent>(true).ToList();
+			if (onlyDamaged && !repairables.Any(repairable => repairable.Durability + 0.1f < repairable.MaxDurability))
+			{
+				return null;
+			}
+
 			var kit = controller.Inventory.GetPlayerItems(EPlayerItems.Stash | EPlayerItems.Equipment)
 				.OfType<RepairKit>()
 				.Where(candidate => candidate.Resource > 0f && repairables.Any(repairable => candidate.CanRepair(repairable.Item)))
@@ -49,17 +72,12 @@ namespace CustomRpTweaks.Client
 				.FirstOrDefault();
 			if (kit == null)
 			{
-				return;
+				return null;
 			}
 
 			// The game's own check, so locked armor slots and the like are left alone
 			var interactions = uiContext.GetItemContextInteractions(new RepairItemContext(itemContext, kit), null);
-			if (!interactions.IsInteractionAvailable(EItemInfoButton.Repair).Succeed)
-			{
-				return;
-			}
-
-			Run(repairController, item, kit);
+			return interactions.IsInteractionAvailable(EItemInfoButton.Repair).Succeed ? kit : null;
 		}
 
 		private static async void Run(EFT.Repairing.RepairController repairController, Item item, RepairKit kit)
