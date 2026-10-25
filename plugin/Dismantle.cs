@@ -14,7 +14,8 @@ namespace CustomRpTweaks.Client
 	// Hotkey on a hovered item: detaches the parts attached to it and puts them next to it, in the container the item lies in.
 	// It goes on with the parts that came off (a scope on a mount on a rail), until nothing more can be taken off.
 	// Every move is the game's own, so what it refuses (in a raid: parts that can't be modded, vital parts, locked armor slots)
-	// stays attached, but the parts attached to it can still come off. Magazines keep their ammo and containers keep their contents.
+	// stays attached, but the parts attached to it can still come off. Magazines keep their ammo and containers keep their contents,
+	// but a round in the chamber comes out.
 	// A second hotkey does the same but leaves the vital parts (the ones in required slots, a receiver for instance) attached wherever it is
 	// used, not only in a raid, so what comes off is the rest of the gun.
 	internal static class Dismantle
@@ -124,6 +125,18 @@ namespace CustomRpTweaks.Client
 					while (queue.Count > 0 && tally.Attempts < MaxMoves && holders++ < MaxMoves)
 					{
 						var holder = queue.Dequeue();
+
+						// A round in the chamber is not in a mod slot (Weapon.Chambers is separate), so it goes first, next to the parts
+						if (holder is Weapon weapon)
+						{
+							foreach (var chamber in weapon.Chambers.ToList())
+							{
+								if (chamber.ContainedItem is Ammo round)
+								{
+									await TakeOff(controller, round, targets, tally);
+								}
+							}
+						}
 						foreach (var slot in holder.Slots.ToList())
 						{
 							var part = slot.ContainedItem;
@@ -237,7 +250,7 @@ namespace CustomRpTweaks.Client
 			{
 				foreach (var grid in target.Grids)
 				{
-					var address = grid.FindLocationForItem(part);
+					var address = FindFreePlace(grid, part);
 					if (address == null)
 					{
 						continue;
@@ -389,6 +402,25 @@ namespace CustomRpTweaks.Client
 			}
 
 			return false;
+		}
+
+		// A free place in the grid for the item, not counting the cell the item itself lies in: Grid.FindLocationForItem lifts an item
+		// that is already in the grid out first, so it answers with the item's own cell, which a split can't use.
+		internal static GridItemAddress FindFreePlace(Grid grid, Item item)
+		{
+			if (!grid.CheckCompatibility(item))
+			{
+				return null;
+			}
+
+			var size = item.CalculateCellSize();
+			var location = grid.FindFreeSpaceInGrid(size.X, size.Y, ItemRotation.Horizontal);
+			if (location == null && size.X != size.Y)
+			{
+				location = grid.FindFreeSpaceInGrid(size.Y, size.X, ItemRotation.Vertical);
+			}
+
+			return location == null ? null : grid.CreateItemAddress(location);
 		}
 
 		// Some templates (armor plates among them) have no short name in the locale

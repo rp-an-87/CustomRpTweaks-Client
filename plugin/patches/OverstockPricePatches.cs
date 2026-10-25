@@ -4,6 +4,7 @@ using System.Reflection;
 using System.Threading.Tasks;
 using Comfort.Common;
 using EFT;
+using EFT.InventoryLogic;
 using EFT.Trading;
 using EFT.UI;
 using EFT.UI.DragAndDrop;
@@ -106,9 +107,9 @@ namespace CustomRpTweaks.Client.Patches
 			protected override MethodBase GetTargetMethod() => typeof(TradingItemView).GetMethod(nameof(TradingItemView.SetPrice), BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly);
 
 			[PatchPostfix]
-			private static void Postfix(TradingItemView __instance, Trader.ItemPrice? price, Trader ___Trader)
+			private static void Postfix(TradingItemView __instance, Trader.ItemPrice? price, Trader ___Trader, EOwnerType ____ownerType)
 			{
-				if (!OverstockPrices.Active || price == null || !__instance._price.gameObject.activeSelf)
+				if (!OverstockPrices.Active || price == null || ____ownerType == EOwnerType.Profile || !__instance._price.gameObject.activeSelf)
 				{
 					return;
 				}
@@ -127,9 +128,9 @@ namespace CustomRpTweaks.Client.Patches
 			protected override MethodBase GetTargetMethod() => typeof(TradingItemView).GetMethod(nameof(TradingItemView.ShowTooltip), BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly);
 
 			[PatchPostfix]
-			private static void Postfix(TradingItemView __instance, Trader ___Trader, bool ___ModSlotView, ItemUiContext ___ItemUiContext)
+			private static void Postfix(TradingItemView __instance, Trader ___Trader, bool ___ModSlotView, ItemUiContext ___ItemUiContext, EOwnerType ____ownerType)
 			{
-				if (!OverstockPrices.Active || !Plugin.PriceIndicatorTooltip.Value || ___ModSlotView)
+				if (!OverstockPrices.Active || !Plugin.PriceIndicatorTooltip.Value || ___ModSlotView || ____ownerType == EOwnerType.Profile)
 				{
 					return;
 				}

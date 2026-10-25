@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Reflection;
 using EFT;
 using EFT.Communications;
@@ -48,7 +49,7 @@ namespace CustomRpTweaks.Client
 				{
 					foreach (var grid in target.Grids)
 					{
-						var address = grid.FindLocationForItem(item);
+						var address = Dismantle.FindFreePlace(grid, item);
 						if (address == null)
 						{
 							continue;
@@ -61,7 +62,8 @@ namespace CustomRpTweaks.Client
 							continue;
 						}
 
-						var outcome = await ItemUiContext.RunWithSound(controller, item, operation);
+						Plugin.Log.LogInfo($"Split: {item.ShortName.Localized()} x{count} into {target.ShortName.Localized()} (targets in order: {string.Join(", ", Dismantle.Targets(controller, item).Select(t => t.ShortName.Localized()).ToArray())})");
+							var outcome = await ItemUiContext.RunWithSound(controller, item, operation);
 						if (outcome.Failed)
 						{
 							Plugin.Log.LogWarning($"Split: {item.ShortName.Localized()} failed ({outcome.Error})");
