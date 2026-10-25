@@ -308,7 +308,7 @@ namespace CustomRpTweaks.Client
 		}
 
 		// Where the parts may go, best first: the container the item (or what it is attached to) lies in, then, for something
-		// carried by a player or a dead body, their pockets, vest and backpack, and for your own gear the stash last. Stash items only go
+		// carried by a player or a dead body, their pockets, vest and backpack (then yours, if it is not your own gear), and for your own gear the stash last. Stash items only go
 		// to the stash grid. Used for the parts taken off an item and for the new stack of a split.
 		internal static List<CompoundItem> Targets(InventoryController controller, Item item)
 		{
@@ -349,6 +349,15 @@ namespace CustomRpTweaks.Client
 				if (equipment == controller.Inventory.Equipment)
 				{
 					Add(controller.Inventory.Stash);
+				}
+
+				// Someone else's gear (a dead body, another character): when theirs is full, the parts go to your own pockets, vest and backpack
+				if (equipment != controller.Inventory.Equipment)
+				{
+					foreach (var slot in new[] { EquipmentSlot.Pockets, EquipmentSlot.TacticalVest, EquipmentSlot.Backpack })
+					{
+						Add(controller.Inventory.Equipment.GetSlot(slot).ContainedItem as CompoundItem);
+					}
 				}
 			}
 
