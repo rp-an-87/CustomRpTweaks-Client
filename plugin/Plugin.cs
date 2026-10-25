@@ -75,6 +75,8 @@ namespace CustomRpTweaks.Client
 
 		internal static ConfigEntry<KeyboardShortcut> EquipPlateHotkey;
 
+		internal static ConfigEntry<KeyboardShortcut> SplitHotkey;
+
 		internal static ConfigEntry<bool> PriceIndicator;
 		internal static ConfigEntry<string> PriceIndicatorNewColor;
 		internal static ConfigEntry<int> PriceIndicatorTraderSize;
@@ -88,6 +90,7 @@ namespace CustomRpTweaks.Client
 			LoadAmmoSkillSpeed.Update();
 			Dismantle.Update();
 			EquipPlate.Update();
+			SplitStack.Update();
 		}
 
 		// A renamed setting takes over the value it had under its old name, if the config file still has one
@@ -211,6 +214,9 @@ namespace CustomRpTweaks.Client
 
 			EquipPlateHotkey = Config.Bind("11. Equip plate", "1. Equip plate hotkey", new KeyboardShortcut(KeyCode.I),
 				"Hover an armor plate in the stash and press this to put it into the first free plate slot of the armor, rig or helmet you wear that accepts it. The game's own rules decide what fits. Not in a raid. Unassign the key to turn the feature off.");
+
+			SplitHotkey = Config.Bind("15. Split stack", "1. Split hotkey", new KeyboardShortcut(KeyCode.S, KeyCode.LeftControl),
+				"Hover a stack (ammo, money, grenades, anything that stacks) and press this to split it in half without the split dialog. The new stack, the lower half, goes to the first free place in the container it lies in (or, for something you carry, your pockets, vest or backpack). Unassign the key to turn the feature off.");
 
 			new StashSortOverlayPatch().Enable();
 			new StashSortReservePatches.SortPatch().Enable();
