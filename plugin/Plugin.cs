@@ -62,8 +62,13 @@ namespace CustomRpTweaks.Client
 
 		private void Update()
 		{
-			MagazineTopUp.Update();
-			RepairWithKit.Update();
+			// GetReady has these two keys when it is loaded
+			if (!GetReadyHints.Active)
+			{
+				MagazineTopUp.Update();
+				RepairWithKit.Update();
+			}
+
 			LoadAmmoSkillSpeed.Update();
 			Dismantle.Update();
 			EquipPlate.Update();

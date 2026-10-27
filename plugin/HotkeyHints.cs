@@ -112,14 +112,22 @@ namespace CustomRpTweaks.Client
 				}
 			}
 
-			if (MagazineTopUp.IsApplicable(item))
+			// Top up and repair: GetReady's when it is loaded, else the copies in this plugin
+			if (GetReadyHints.Active)
 			{
-				Add(Plugin.TopUpMagazine, "top up");
+				hints.AddRange(GetReadyHints.For(item, KeyLabel));
 			}
-
-			if (uiContext != null && RepairWithKit.IsApplicable(uiContext, controller, item))
+			else
 			{
-				Add(Plugin.RepairWithKitHotkey, "repair");
+				if (MagazineTopUp.IsApplicable(item))
+				{
+					Add(Plugin.TopUpMagazine, "top up");
+				}
+
+				if (uiContext != null && RepairWithKit.IsApplicable(uiContext, controller, item))
+				{
+					Add(Plugin.RepairWithKitHotkey, "repair");
+				}
 			}
 
 			if (EquipPlate.IsApplicable(controller, item))
