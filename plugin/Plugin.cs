@@ -32,35 +32,8 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<bool> CraftFirHandling;
 		internal static ConfigEntry<bool> KeepTopRowsFree;
 		internal static ConfigEntry<int> TopRowsToKeepFree;
-		internal static ConfigEntry<bool> KitButton;
 		internal static ConfigEntry<bool> KeepSpeedWhileZooming;
 		internal static ConfigEntry<bool> SteadyAimHoldBreathFix;
-		internal static ConfigEntry<int> KitHealthResource;
-		internal static ConfigEntry<int> KitBandageResource;
-		internal static ConfigEntry<int> KitHeavyBleedResource;
-		internal static ConfigEntry<int> KitPropital;
-		// Grenade types the kit can bring, a minimum each. A type with several grenades takes whichever of them the stash has, at random.
-		// Impact grenades are left out of the quota's random picks.
-		internal static readonly (string[] Templates, string Name, int Default, bool Impact)[] KitGrenadeTypes =
-		{
-			(new[] { "58d3db5386f77426186285a0" }, "M67", 2, false),
-			(new[] { "5448be9a4bdc2dfd2f8b456a" }, "RGD-5", 0, false),
-			(new[] { "5710c24ad2720bc3458b45a3" }, "F-1", 0, false),
-			(new[] { "5e32f56fcb6d5863cc5e5ee4", "5e340dcdcb6d5863cc5e5efb" }, "VOG-17 / VOG-25 (random)", 0, false),
-			(new[] { "617fd91e5539a84ec44ce155", "618a431df1eb8e24b8741deb" }, "Impact RGN / RGO (random)", 0, true),
-		};
-		internal static ConfigEntry<int>[] KitGrenadeCounts;
-		internal static ConfigEntry<int> KitGrenadeQuota;
-		// Money the kit keeps in the docs/SICC case or wallet you carry: template, name, default amount
-		internal static readonly (string Template, string Name, int Default)[] KitCashCurrencies =
-		{
-			("5449016a4bdc2d6f028b456f", "RUB", 75000),
-			("569668774bdc2da2298b4568", "EUR", 0),
-			("5696686a4bdc2da3298b456a", "USD", 0),
-		};
-		internal static ConfigEntry<int>[] KitCashTargets;
-		internal static ConfigEntry<bool> KitAllowOvershoot;
-		internal static ConfigEntry<bool> KitSwapWorse;
 
 		internal static ConfigEntry<bool> ScaleLoadAmmoSpeed;
 		internal static ConfigEntry<float> LoadAmmoSpeedAtLevel0;
@@ -148,34 +121,6 @@ namespace CustomRpTweaks.Client
 			new HideoutCraftFirPatches.BuyMaterialsPatch().Enable();
 			new HideoutCraftFirPatches.StartButtonPatch().Enable();
 			new HideoutCraftFirPatches.BuyTooltipPatch().Enable();
-
-			KitButton = Config.Bind("6. Kit button", "1. Show kit button in the stash", false,
-				"Adds a button above the pin button of your stash (hideout/menu only). Pressing it moves a preset list of consumables from the stash into your pockets, then vest, skipping what you already carry and what the stash doesn't have. Prefers non-FiR items, then the fullest ones.");
-			KitHealthResource = Config.Bind("6. Kit button", "2. Health resource (0 disables)", 300,
-				new ConfigDescription("Health resource of meds to carry. What you carry counts towards it (partly used kits count for what they have left). Missing resource is filled in priority order: AFAK, Salewa, IFAK, Car, AI-2. AFAK and Salewa are 400, IFAK 300, Car 220, AI-2 100.", new AcceptableValueRange<int>(0, 2000)));
-			KitBandageResource = Config.Bind("6. Kit button", "3. Bandage points (0 disables)", 2,
-				new ConfigDescription("Bandage points to carry: an Army bandage counts its remaining uses (2 when new), an Aseptic bandage is 1. Army bandages are preferred.", new AcceptableValueRange<int>(0, 20)));
-			KitHeavyBleedResource = Config.Bind("6. Kit button", "4. Heavy bleed points (0 disables)", 2,
-				new ConfigDescription("Heavy bleed points to carry: a CALOK-B counts its remaining uses (3 when new), a CAT or an Esmarch tourniquet is 1. Preference: CALOK-B, CAT, Esmarch.", new AcceptableValueRange<int>(0, 20)));
-			KitPropital = Config.Bind("6. Kit button", "5. Propital (0 disables)", 1,
-				new ConfigDescription("How many Propital injectors to carry.", new AcceptableValueRange<int>(0, 10)));
-			KitGrenadeCounts = KitGrenadeTypes
-				.Select((grenade, index) => Config.Bind("6b. Kit grenades", $"{index + 1}. {grenade.Name} (0 disables)", grenade.Default,
-					new ConfigDescription($"At least this many {grenade.Name} grenades to carry, as far as the stash has them. Any combination of the types can be set; a type with two grenades takes whichever the stash has, at random. The grenade quota below tops up the rest.", new AcceptableValueRange<int>(0, 10))))
-				.ToArray();
-			KitGrenadeQuota = Config.Bind("6b. Kit grenades", "0. Grenade quota (0 disables)", 0,
-				new ConfigDescription("Total grenades to carry. The 'at least' amounts below are brought first; if you carry fewer than the quota afterwards (say you ran out of M67), random grenades from the stash make up the difference, from the non-impact types (M67, RGD-5, F-1, VOG-17/25). Every grenade of the types below that you carry counts towards the quota. Non-FiR grenades are preferred.", new AcceptableValueRange<int>(0, 10)));
-			KitCashTargets = KitCashCurrencies
-				.Select((currency, index) => Config.Bind("6c. Kit cash", $"{index + 1}. {currency.Name} in your case (0 disables)", currency.Default,
-					new ConfigDescription($"{currency.Name} to carry in a docs case, SICC case or wallet (also the WZ wallet) on your character, say for coop extracts. Money already in the case counts; the missing amount is moved from the stash (a part of a stack is split off). One of the cases is used, one that already holds the money first. Warns if the stash has less.", new AcceptableValueRange<int>(0, 10000000))))
-				.ToArray();
-			KitAllowOvershoot = Config.Bind("6. Kit button", "7. Allow overshoot", true,
-				"When the missing amount is smaller than the next item in priority (e.g. 1 point missing and an Army bandage is next), take it anyway. When off, it skips to a smaller item that fits, or takes nothing.");
-
-			KitSwapWorse = Config.Bind("6. Kit button", "8. Swap worse items", true,
-				"Before filling up, items you carry that are worse than what the stash has (lower priority, partly used, or FiR when a non-FiR one is available) are moved to the stash and replaced by the better ones.");
-
-			new LoadoutKitButtonPatch().Enable();
 
 			KeepSpeedWhileZooming = Config.Bind("8. Movement", "1. Keep walk speed while zooming a scope", false,
 				"The mouse wheel changes both your walk speed and the zoom of a smooth-zoom scope. With this on, the wheel does not change your walk speed while you aim through a smooth-zoom (variable) scope and hold your scope zoom key combination (for example Alt + wheel). The wheel alone, other sights and not aiming are not affected.");
