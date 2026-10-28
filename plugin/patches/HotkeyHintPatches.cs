@@ -4,6 +4,7 @@ using EFT.UI;
 using EFT.UI.DragAndDrop;
 using HarmonyLib;
 using SPT.Reflection.Patching;
+using UnityEngine;
 using UnityEngine.EventSystems;
 
 namespace CustomRpTweaks.Client.Patches
@@ -28,6 +29,21 @@ namespace CustomRpTweaks.Client.Patches
 			private static void Prefix() => HotkeyHints.Hovered = null;
 		}
 
+		// The item view also shows tooltips for the small icons on it (insured, found in raid...) while the pointer is still on the item,
+		// and those must not get the hints. Only the tooltip the view shows for the item itself, from ShowTooltip, does.
+		internal class ItemTooltipPatch : ModulePatch
+		{
+			internal static bool Showing;
+
+			protected override MethodBase GetTargetMethod() => typeof(GridItemView).GetMethod(nameof(GridItemView.ShowTooltip), BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly);
+
+			[PatchPrefix]
+			private static void Prefix() => Showing = true;
+
+			[PatchPostfix]
+			private static void Postfix() => Showing = false;
+		}
+
 		internal class TooltipShowPatch : ModulePatch
 		{
 			protected override MethodBase GetTargetMethod() => typeof(SimpleTooltip).GetMethod(nameof(SimpleTooltip.Show), BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly);
@@ -40,7 +56,9 @@ namespace CustomRpTweaks.Client.Patches
 				// Never let a problem with the hints stop a tooltip from showing
 				try
 				{
-					if (text == null || HotkeyHints.Hovered == null || text.Contains(HotkeyHints.Open))
+					// LootValuePlus redraws the item tooltip on Alt, outside ShowTooltip
+					bool redraw = Input.GetKeyDown(KeyCode.LeftAlt) || Input.GetKeyUp(KeyCode.LeftAlt);
+					if (text == null || HotkeyHints.Hovered == null || text.Contains(HotkeyHints.Open) || !(ItemTooltipPatch.Showing || redraw))
 					{
 						return;
 					}

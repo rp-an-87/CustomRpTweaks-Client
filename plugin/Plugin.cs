@@ -144,7 +144,7 @@ namespace CustomRpTweaks.Client
 			}
 
 			UnchamberHotkey = Config.Bind("10b. Unchamber", "1. Unchamber hotkey", new KeyboardShortcut(KeyCode.U),
-				"Hover a weapon and press this to take the round (or the spent case) out of its chamber, without unloading the magazine or taking the weapon apart (UI Fixes' unload key leaves the chamber alone, and an unloaded weapon sells on the flea market). It goes to the container the weapon lies in, then any container whoever wears it carries (a corpse's, then yours), then any inventory you have open, then in the menu the stash; in a raid, when nothing takes it, nothing is moved. The default U is also UI Fixes' unload key: one press then takes the magazine out (UI Fixes) and empties the chamber (this), leaving the weapon unloaded. Unassign the key to turn the feature off.");
+				"Hover a weapon and press this to take the round (or the spent case) out of its chamber, without unloading the magazine or taking the weapon apart (UI Fixes' unload key leaves the chamber alone, and an unloaded weapon sells on the flea market). It goes to the container the weapon lies in, then any container whoever wears it carries (a corpse's, then yours), then any inventory you have open, then in the menu the stash; in a raid, when nothing takes it, nothing is moved. It only acts on a weapon with no magazine in it. The default U is also UI Fixes' unload key: the first press takes the magazine out (UI Fixes), the second empties the chamber (this), leaving the weapon unloaded. Unassign the key to turn the feature off.");
 
 			DismantleHotkey = Config.Bind("10. Dismantle", "1. Dismantle hotkey", new KeyboardShortcut(KeyCode.D, KeyCode.LeftAlt),
 				"Hover an item and press this to take off the parts attached to it (a weapon's mods, an armor's plates and other removable parts) and put them next to it, in the container it lies in. The item itself stays where it is, only what is attached to it comes off. Magazines keep their ammo and containers keep their contents. Parts the game won't let you remove stay on. Unassign the key to turn the feature off.");
@@ -189,6 +189,7 @@ namespace CustomRpTweaks.Client
 			UiFixesHints.Setup(Config);
 			new HotkeyHintPatches.HoverEnterPatch().Enable();
 			new HotkeyHintPatches.HoverExitPatch().Enable();
+			new HotkeyHintPatches.ItemTooltipPatch().Enable();
 			new HotkeyHintPatches.TooltipShowPatch().Enable();
 
 			PriceIndicator = Config.Bind("12. Price indicator", "1. Colour prices the server has raised", true,

@@ -357,7 +357,7 @@ namespace CustomRpTweaks.Client
 
 			if (top is InventoryEquipment equipment)
 			{
-				foreach (var carried in CarriedContainers(equipment))
+				foreach (var carried in CarriedContainers(equipment, equipment == controller.Inventory.Equipment))
 				{
 					Add(carried);
 				}
@@ -402,9 +402,11 @@ namespace CustomRpTweaks.Client
 		}
 
 		// Every container a character carries (pockets, vests, armored rigs, backpacks, the secured container...) in whatever order the
-		// equipment lists them: any free place is fair game, as it is for the game itself
-		internal static List<CompoundItem> CarriedContainers(InventoryEquipment equipment) =>
+		// equipment lists them: any free place is fair game, as it is for the game itself. The secured container only counts for your own
+		// gear: on a body (a boss has one too) it can't be opened, so whatever goes in is gone.
+		internal static List<CompoundItem> CarriedContainers(InventoryEquipment equipment, bool includeSecured = true) =>
 			equipment.Slots
+				.Where(slot => includeSecured || slot.ID != nameof(EquipmentSlot.SecuredContainer))
 				.Select(slot => slot.ContainedItem as CompoundItem)
 				.Where(container => container != null && container.Grids != null && container.Grids.Length > 0)
 				.ToList();

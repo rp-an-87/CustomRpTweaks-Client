@@ -20,8 +20,10 @@ namespace CustomRpTweaks.Client
 
 		private static bool _running;
 
-		// A weapon with something in its chamber
-		internal static bool IsApplicable(Item item) => item is Weapon weapon && weapon.Chambers.Any(chamber => chamber.ContainedItem is Ammo);
+		// A weapon with something in its chamber and no magazine in it: with a magazine in, the key is UI Fixes' unload alone (both at once
+		// made the two moves collide); the next press, with the magazine out, takes the chamber
+		internal static bool IsApplicable(Item item) =>
+			item is Weapon weapon && weapon.GetMagazineSlot()?.ContainedItem == null && weapon.Chambers.Any(chamber => chamber.ContainedItem is Ammo);
 
 		internal static void Update()
 		{
