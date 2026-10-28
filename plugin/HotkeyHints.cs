@@ -112,22 +112,15 @@ namespace CustomRpTweaks.Client
 				}
 			}
 
-			// Top up and repair: GetReady's when it is loaded, else the copies in this plugin
+			// Top up, repair: the hotkeys of GetReady, when it is loaded
 			if (GetReadyHints.Active)
 			{
 				hints.AddRange(GetReadyHints.For(item, KeyLabel));
 			}
-			else
-			{
-				if (MagazineTopUp.IsApplicable(item))
-				{
-					Add(Plugin.TopUpMagazine, "top up");
-				}
 
-				if (uiContext != null && RepairWithKit.IsApplicable(uiContext, controller, item))
-				{
-					Add(Plugin.RepairWithKitHotkey, "repair");
-				}
+			if (Unchamber.IsApplicable(item))
+			{
+				Add(Plugin.UnchamberHotkey, "unchamber");
 			}
 
 			if (EquipPlate.IsApplicable(controller, item))

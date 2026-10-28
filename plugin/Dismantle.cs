@@ -8,6 +8,7 @@ using EFT;
 using EFT.Communications;
 using EFT.InventoryLogic;
 using EFT.UI;
+using EFT.UI.DragAndDrop;
 
 namespace CustomRpTweaks.Client
 {
@@ -320,9 +321,12 @@ namespace CustomRpTweaks.Client
 			return item.Parent is SlotItemAddress address && !(address.Container?.ParentItem is InventoryEquipment);
 		}
 
-		// Where the parts may go, best first: the container the item (or what it is attached to) lies in, then, for something
-		// carried by a player or a dead body, their pockets, vest and backpack (then yours, if it is not your own gear), and for your own gear the stash last. Stash items only go
-		// to the stash grid. Used for the parts taken off an item and for the new stack of a split.
+		// Where the parts may go, best first, the same both ways round: the container the item (or what it is attached to) lies in, then
+		// any container its owner carries (no exclusions, in no particular order: any free place is fair game), then any other
+		// inventory open on screen (a bag you opened, a body), and last the other side: for your own gear in the menu the stash, for
+		// someone else's gear (a body, another character) or something lying in a bag that is not yours, what you carry. Stash items
+		// only go to the stash grid. Used for the parts taken off an item, for the round taken out of a chamber and for the new stack
+		// of a split.
 		internal static List<CompoundItem> Targets(InventoryController controller, Item item)
 		{
 			var targets = new List<CompoundItem>();
@@ -353,29 +357,78 @@ namespace CustomRpTweaks.Client
 
 			if (top is InventoryEquipment equipment)
 			{
-				foreach (var slot in new[] { EquipmentSlot.Pockets, EquipmentSlot.TacticalVest, EquipmentSlot.Backpack })
+				foreach (var carried in CarriedContainers(equipment))
 				{
-					Add(equipment.GetSlot(slot).ContainedItem as CompoundItem);
+					Add(carried);
 				}
 
-				// Your own gear, in the menu: the stash is part of your inventory too, but what you carry stays on you first
+				// An inventory you have open counts too (a bag on the ground, a body), before the other side
+				foreach (var open in OpenContainers(controller))
+				{
+					Add(open);
+				}
+
 				if (equipment == controller.Inventory.Equipment)
 				{
+					// Your own gear, in the menu: the stash is part of your inventory too, but what you carry stays on you first
 					Add(controller.Inventory.Stash);
 				}
-
-				// Someone else's gear (a dead body, another character): when theirs is full, the parts go to your own pockets, vest and backpack
-				if (equipment != controller.Inventory.Equipment)
+				else
 				{
-					foreach (var slot in new[] { EquipmentSlot.Pockets, EquipmentSlot.TacticalVest, EquipmentSlot.Backpack })
+					// Someone else's gear (a dead body, another character): when theirs and the open ones are full, what you carry
+					foreach (var carried in CarriedContainers(controller.Inventory.Equipment))
 					{
-						Add(controller.Inventory.Equipment.GetSlot(slot).ContainedItem as CompoundItem);
+						Add(carried);
 					}
+				}
+			}
+			else if (top != controller.Inventory.Stash)
+			{
+				// Something that lies in a container that is neither yours nor the stash (a bag on the ground): its own container, then
+				// any other inventory open, then what you carry
+				foreach (var open in OpenContainers(controller))
+				{
+					Add(open);
+				}
+
+				foreach (var carried in CarriedContainers(controller.Inventory.Equipment))
+				{
+					Add(carried);
 				}
 			}
 
 			targets.RemoveAll(target => target == item || IsInside(target, item));
 			return targets;
+		}
+
+		// Every container a character carries (pockets, vests, armored rigs, backpacks, the secured container...) in whatever order the
+		// equipment lists them: any free place is fair game, as it is for the game itself
+		internal static List<CompoundItem> CarriedContainers(InventoryEquipment equipment) =>
+			equipment.Slots
+				.Select(slot => slot.ContainedItem as CompoundItem)
+				.Where(container => container != null && container.Grids != null && container.Grids.Length > 0)
+				.ToList();
+
+		// The containers of OTHER inventories shown on screen right now (a bag you opened, a dead body's pockets): their grids are on
+		// display. Only characters' and loot inventories, not a trader's, the flea market's or the mail's, and not your own (those are
+		// handled by the order of the owner and you, even though your backpack is on screen in a raid too).
+		internal static List<CompoundItem> OpenContainers(InventoryController controller) =>
+			UnityEngine.Object.FindObjectsOfType<GridView>()
+				.Select(view => view.Grid?.ParentItem as CompoundItem)
+				.Where(container => container != null && container.Owner != null && container.Owner.OwnerType == EOwnerType.Profile && !IsYours(controller, container))
+				.Distinct()
+				.ToList();
+
+		// Lies in your equipment or your stash
+		private static bool IsYours(InventoryController controller, Item item)
+		{
+			var top = item;
+			for (var depth = 0; depth < 64 && HolderOf(top) != null; depth++)
+			{
+				top = HolderOf(top);
+			}
+
+			return top == controller.Inventory.Equipment || top == controller.Inventory.Stash;
 		}
 
 		// The item this one is attached to or lies in. A root item (the stash, the equipment) belongs to its owner, whose

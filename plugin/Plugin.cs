@@ -40,8 +40,7 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<float> LoadAmmoSpeedAtLevel50;
 		internal static ConfigEntry<float> LoadAmmoSpeedAtElite;
 
-		internal static ConfigEntry<KeyboardShortcut> TopUpMagazine;
-		internal static ConfigEntry<KeyboardShortcut> RepairWithKitHotkey;
+		internal static ConfigEntry<KeyboardShortcut> UnchamberHotkey;
 
 		internal static ConfigEntry<KeyboardShortcut> DismantleHotkey;
 		internal static ConfigEntry<KeyboardShortcut> DismantleNonVitalHotkey;
@@ -62,15 +61,9 @@ namespace CustomRpTweaks.Client
 
 		private void Update()
 		{
-			// GetReady has these two keys when it is loaded
-			if (!GetReadyHints.Active)
-			{
-				MagazineTopUp.Update();
-				RepairWithKit.Update();
-			}
-
 			LoadAmmoSkillSpeed.Update();
 			Dismantle.Update();
+			Unchamber.Update();
 			EquipPlate.Update();
 			SplitStack.Update();
 		}
@@ -150,11 +143,8 @@ namespace CustomRpTweaks.Client
 				new LoadAmmoSkillUiPatches.BuffDescriptionPatch().Enable();
 			}
 
-			TopUpMagazine = Config.Bind("7. Magazine top-up", "1. Top-up hotkey", new KeyboardShortcut(KeyCode.T),
-				"Hover a magazine in the stash or in a raid inventory and press this to fill it up. It uses the ammo the magazine already holds, or else the highest-penetration ammo it accepts, taken from the stash and your gear. In a raid it is the normal timed load. Unassign the key to turn the feature off.");
-
-			RepairWithKitHotkey = Config.Bind("7b. Repair with kit", "1. Repair hotkey", new KeyboardShortcut(KeyCode.R),
-				"Hover an item in the stash and press this to repair it fully with one of your repair kits, without opening the repair window (the same repair as the window's button, as far as the kits can pay for). It uses the kit with the least resource left that can repair the item. Does nothing if you have no suitable kit, or outside the hideout/menu stash. Unassign the key to turn the feature off.");
+			UnchamberHotkey = Config.Bind("10b. Unchamber", "1. Unchamber hotkey", new KeyboardShortcut(KeyCode.U),
+				"Hover a weapon and press this to take the round (or the spent case) out of its chamber, without unloading the magazine or taking the weapon apart (UI Fixes' unload key leaves the chamber alone, and an unloaded weapon sells on the flea market). It goes to the container the weapon lies in, then any container whoever wears it carries (a corpse's, then yours), then any inventory you have open, then in the menu the stash; in a raid, when nothing takes it, nothing is moved. The default U is also UI Fixes' unload key: one press then takes the magazine out (UI Fixes) and empties the chamber (this), leaving the weapon unloaded. Unassign the key to turn the feature off.");
 
 			DismantleHotkey = Config.Bind("10. Dismantle", "1. Dismantle hotkey", new KeyboardShortcut(KeyCode.D, KeyCode.LeftAlt),
 				"Hover an item and press this to take off the parts attached to it (a weapon's mods, an armor's plates and other removable parts) and put them next to it, in the container it lies in. The item itself stays where it is, only what is attached to it comes off. Magazines keep their ammo and containers keep their contents. Parts the game won't let you remove stay on. Unassign the key to turn the feature off.");

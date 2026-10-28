@@ -7,9 +7,8 @@ using EFT.InventoryLogic;
 
 namespace CustomRpTweaks.Client
 {
-	// The magazine top-up and repair hotkeys live in GetReady (RPAN87.GetReady). When that plugin is loaded it handles the keys and
-	// gives the hints for them: this finds its QuickActionHints.For by name and calls it, so neither mod needs the other to load.
-	// Without GetReady, the copies in this plugin keep working as before.
+	// The magazine top-up and repair hotkeys live in GetReady (RPAN87.GetReady). It handles the keys; this finds its
+	// QuickActionHints.For by name and calls it for the tooltip hints, so neither mod needs the other to load.
 	internal static class GetReadyHints
 	{
 		internal const string TargetGuid = "RPAN87.GetReady";
@@ -17,8 +16,7 @@ namespace CustomRpTweaks.Client
 		private static Func<Item, List<KeyValuePair<KeyboardShortcut, string>>> _for;
 		private static bool _bound;
 
-		// GetReady is loaded and offers the hints: it handles top-up and repair, so this plugin leaves those keys alone. Bound on the
-		// first call, after every plugin has been loaded.
+		// GetReady is loaded and offers the hints. Bound on the first call, after every plugin has been loaded.
 		internal static bool Active
 		{
 			get
@@ -37,12 +35,12 @@ namespace CustomRpTweaks.Client
 							}
 						}
 
-						Plugin.Log.LogInfo(_for != null ? "GetReady found: it handles magazine top-up and repair, with their hints." : "GetReady not found: top-up and repair run from this plugin.");
+						Plugin.Log.LogInfo(_for != null ? "GetReady found: its hotkey hints (top up, repair) are shown." : "GetReady not found: no hints for its hotkeys.");
 					}
 					catch (Exception e)
 					{
 						_for = null;
-						Plugin.Log.LogWarning($"Couldn't use GetReady's hotkey hints, top-up and repair run from this plugin: {e.Message}");
+						Plugin.Log.LogWarning($"Couldn't use GetReady's hotkey hints: {e.Message}");
 					}
 				}
 
