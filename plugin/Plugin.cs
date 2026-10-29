@@ -51,6 +51,8 @@ namespace CustomRpTweaks.Client
 
 		internal static ConfigEntry<KeyboardShortcut> SplitHotkey;
 
+		internal static ConfigEntry<bool> HandInMenu;
+
 		internal static ConfigEntry<bool> HotkeyHints;
 
 		internal static ConfigEntry<bool> PriceIndicator;
@@ -165,6 +167,11 @@ namespace CustomRpTweaks.Client
 
 			SplitHotkey = Config.Bind("15. Split stack", "1. Split hotkey", new KeyboardShortcut(KeyCode.S, KeyCode.LeftControl),
 				"Hover a stack (ammo, money, grenades, anything that stacks) and press this to split it in half without the split dialog. The new stack, the lower half, goes to the first free place in the container it lies in (or, for something you carry, your pockets, vest or backpack). Unassign the key to turn the feature off.");
+
+			HandInMenu = Config.Bind("16. Hand in", "1. Hand in in the context menu", true,
+				"Right-click an item in the stash: when a started quest still wants exactly this item (found in raid, durability and the other conditions of the quest line all met, the same test as the game's own hand-over window), a \"Hand in\" button hands it in to that quest. If the quest needs fewer than the stack holds, it says so and nothing is handed in (split the stack first). Not in a raid. Takes effect the next time the menu opens.");
+			new HandInPatches.ContextMenuPatch().Enable();
+			new HandInPatches.ButtonLookPatch().Enable();
 
 			new StashSortOverlayPatch().Enable();
 			new StashSortReservePatches.SortPatch().Enable();
