@@ -37,7 +37,18 @@ namespace CustomRpTweaks.Client.Patches
 
 					// The button just made is the last one
 					var button = container.GetChild(container.childCount - 1);
-					button.SetAsFirstSibling();
+					// Top of the buttons, but not below the container's other children (a background would draw over it and swallow the clicks)
+					var firstButtonIndex = int.MaxValue;
+					for (var i = 0; i < container.childCount - 1; i++)
+					{
+						if (container.GetChild(i).GetComponent<SimpleContextMenuButton>() != null)
+						{
+							firstButtonIndex = i;
+							break;
+						}
+					}
+
+					button.SetSiblingIndex(firstButtonIndex == int.MaxValue ? 0 : firstButtonIndex);
 					foreach (var text in button.GetComponentsInChildren<TMP_Text>(true))
 					{
 						text.color = HandIn.Yellow;
