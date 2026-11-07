@@ -28,6 +28,8 @@ namespace CustomRpTweaks.Client
 
 		private static bool _running;
 
+		internal static InventoryController ControllerOf(ItemUiContext uiContext) => uiContext == null ? null : ControllerField.GetValue(uiContext) as InventoryController;
+
 		// Whether the hotkey would do something for the item: it has parts attached (or, with the setting on, is one itself). hasVitalParts: some of them are
 		// in required slots, which the keep-vital hotkey leaves on
 		internal static bool IsApplicable(Item item, out bool hasVitalParts)
@@ -83,22 +85,27 @@ namespace CustomRpTweaks.Client
 			var controller = uiContext == null ? null : ControllerField.GetValue(uiContext) as InventoryController;
 			if (item == null || controller == null || (InGameStatus.InRaid && !Plugin.DismantleInRaid.Value))
 			{
-				Plugin.Log.LogInfo($"Dismantle: nothing done, hovered item: {(hovered == null ? "none" : NameOf(hovered) + " (" + hovered.GetType().Name + ")")}, controller: {controller != null}, in raid: {InGameStatus.InRaid}");
+				Plugin.Verbose($"Dismantle: nothing done, hovered item: {(hovered == null ? "none" : NameOf(hovered) + " (" + hovered.GetType().Name + ")")}, controller: {controller != null}, in raid: {InGameStatus.InRaid}");
 				return;
 			}
 
 			Run(controller, item, keepVital);
 		}
 
-		private static async void Run(InventoryController controller, CompoundItem item, bool keepVital)
+		internal static async void Run(InventoryController controller, CompoundItem item, bool keepVital)
 		{
+			if (_running)
+			{
+				return;
+			}
+
 			_running = true;
 			try
 			{
 				var targets = Targets(controller, item);
 				if (targets.Count == 0)
 				{
-					Plugin.Log.LogInfo($"Dismantle: {NameOf(item)} ({item.GetType().Name}): no container to put the parts in");
+					Plugin.Verbose($"Dismantle: {NameOf(item)} ({item.GetType().Name}): no container to put the parts in");
 					NotificationManager.DisplayMessageNotification($"Dismantle: no container to put the parts of {NameOf(item)} in.");
 					return;
 				}
@@ -176,7 +183,7 @@ namespace CustomRpTweaks.Client
 						var moved = await TakeOff(controller, part, targets, tally);
 						if (moved)
 						{
-							Plugin.Log.LogInfo($"Dismantle: {NameOf(part)} came off on retry {sweep}");
+							Plugin.Verbose($"Dismantle: {NameOf(part)} came off on retry {sweep}");
 						}
 
 						if (part is CompoundItem compound && !(part is Magazine) && (moved || controller.Examined(part)))
@@ -241,7 +248,7 @@ namespace CustomRpTweaks.Client
 			{
 				tally.Refused++;
 				tally.FirstRefusal = tally.FirstRefusal ?? forbidden;
-				Plugin.Log.LogInfo($"Dismantle: {NameOf(part)} stays ({forbidden})");
+				Plugin.Verbose($"Dismantle: {NameOf(part)} stays ({forbidden})");
 				return false;
 			}
 
@@ -262,7 +269,7 @@ namespace CustomRpTweaks.Client
 					if (operation.Failed && operation.Error is UnknownItemError)
 					{
 						tally.Unknown.Add(part);
-						Plugin.Log.LogInfo($"Dismantle: {NameOf(part)} is not known to the game yet, will try again");
+						Plugin.Verbose($"Dismantle: {NameOf(part)} is not known to the game yet, will try again");
 						return false;
 					}
 
@@ -271,7 +278,7 @@ namespace CustomRpTweaks.Client
 						// A rule of the game (not a lack of space), the same for every place
 						tally.Refused++;
 						tally.FirstRefusal = tally.FirstRefusal ?? operation.Error?.ToString();
-						Plugin.Log.LogInfo($"Dismantle: {NameOf(part)} stays ({operation.Error})");
+						Plugin.Verbose($"Dismantle: {NameOf(part)} stays ({operation.Error})");
 						return false;
 					}
 
@@ -285,7 +292,7 @@ namespace CustomRpTweaks.Client
 					}
 
 					tally.Moved++;
-					Plugin.Log.LogInfo($"Dismantle: {NameOf(part)} taken off into {target.ShortName.Localized()}");
+					Plugin.Verbose($"Dismantle: {NameOf(part)} taken off into {target.ShortName.Localized()}");
 					return true;
 				}
 			}
@@ -446,7 +453,7 @@ namespace CustomRpTweaks.Client
 			return holder == item ? null : holder;
 		}
 
-		private static bool IsInside(Item candidate, Item ancestor)
+		internal static bool IsInside(Item candidate, Item ancestor)
 		{
 			for (var current = candidate; current != null; current = HolderOf(current))
 			{
@@ -479,7 +486,7 @@ namespace CustomRpTweaks.Client
 		}
 
 		// Some templates (armor plates among them) have no short name in the locale
-		private static string NameOf(Item item)
+		internal static string NameOf(Item item)
 		{
 			var name = item.ShortName.Localized();
 			if (string.IsNullOrEmpty(name))
@@ -492,7 +499,7 @@ namespace CustomRpTweaks.Client
 
 		private static void Report(Item item, Tally tally)
 		{
-			Plugin.Log.LogInfo($"Dismantle: {NameOf(item)}: {tally.Moved} removed, {tally.NoRoom} without room, {tally.Refused} refused, {tally.Unexamined} not examined, in raid: {InGameStatus.InRaid}");
+			Plugin.Verbose($"Dismantle: {NameOf(item)}: {tally.Moved} removed, {tally.NoRoom} without room, {tally.Refused} refused, {tally.Unexamined} not examined, in raid: {InGameStatus.InRaid}");
 			if (tally.Moved > 0)
 			{
 				Singleton<GUISounds>.Instance.PlayUISound(EUISoundType.MenuWeaponDisassemble);

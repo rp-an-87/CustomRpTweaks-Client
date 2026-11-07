@@ -40,7 +40,7 @@ namespace CustomRpTweaks.Client
 		private static readonly FieldInfo InventoryControllerField = typeof(ItemUiContext).GetField("_inventoryController", BindingFlags.Instance | BindingFlags.NonPublic);
 
 		// ContextInteractions<T>.method_2(id, key, callback, icon) adds a button of our own (the game's obfuscated name, found by its shape)
-		private static readonly MethodInfo AddDynamic = typeof(ContextInteractions<EItemInfoButton>).GetMethods(BindingFlags.Instance | BindingFlags.Public)
+		internal static readonly MethodInfo AddDynamic = typeof(ContextInteractions<EItemInfoButton>).GetMethods(BindingFlags.Instance | BindingFlags.Public)
 			.FirstOrDefault(method =>
 			{
 				var parameters = method.GetParameters();
@@ -187,7 +187,7 @@ namespace CustomRpTweaks.Client
 				}
 			}
 
-			Plugin.Log.LogInfo($"Hand in: no split ({refusal ?? "no free place"})");
+			Plugin.Verbose($"Hand in: no split ({refusal ?? "no free place"})");
 			NotificationManager.DisplayMessageNotification(refusal == null ? "Hand in: no room for the part to split off." : "Hand in: the game doesn't allow splitting it here.");
 			return null;
 		}
@@ -233,7 +233,7 @@ namespace CustomRpTweaks.Client
 				var result = await questController.HandoverItem(target.Quest, target.Condition, new[] { item }, true);
 				if (result.Succeed)
 				{
-					Plugin.Log.LogInfo($"Hand in: {count}x {name} to {target.Quest.Template.Name}");
+					Plugin.Verbose($"Hand in: {count}x {name} to {target.Quest.Template.Name}");
 					NotificationManager.DisplayMessageNotification($"Handed in {name} for {target.Quest.Template.Name.Localized()}.");
 				}
 				else

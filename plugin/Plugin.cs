@@ -21,6 +21,17 @@ namespace CustomRpTweaks.Client
 		internal static ManualLogSource Log;
 		internal static Plugin Instance;
 
+		internal static ConfigEntry<bool> VerboseLogging;
+
+		// Routine progress messages (what a hotkey did, which optional mods were found); warnings and errors always go to the log
+		internal static void Verbose(string message)
+		{
+			if (VerboseLogging != null && VerboseLogging.Value)
+			{
+				Log.LogInfo(message);
+			}
+		}
+
 		internal static ConfigEntry<bool> HideOtherPlayersSkillNotifications;
 		internal static ConfigEntry<bool> LogSuppressedNotifications;
 
@@ -47,6 +58,11 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<bool> DismantleSelf;
 		internal static ConfigEntry<bool> DismantleInRaid;
 
+		internal static ConfigEntry<KeyboardShortcut> EmptyHotkey;
+		internal static ConfigEntry<bool> EmptyInRaid;
+		internal static ConfigEntry<bool> ContextMenuEntries;
+		internal static ConfigEntry<bool> ReplaceDisassemble;
+
 		internal static ConfigEntry<KeyboardShortcut> EquipPlateHotkey;
 
 		internal static ConfigEntry<KeyboardShortcut> SplitHotkey;
@@ -65,6 +81,7 @@ namespace CustomRpTweaks.Client
 		{
 			LoadAmmoSkillSpeed.Update();
 			Dismantle.Update();
+			Empty.Update();
 			Unchamber.Update();
 			EquipPlate.Update();
 			SplitStack.Update();
@@ -88,6 +105,9 @@ namespace CustomRpTweaks.Client
 		{
 			Log = Logger;
 			Instance = this;
+
+			VerboseLogging = Config.Bind("17. Logging", "1. Verbose logging", false,
+				"Writes a line to the BepInEx log for every step of Dismantle, Empty, Split, Equip plate, Hand in and Unchamber, and for optional mods found at startup. Warnings and errors are always logged. For troubleshooting.");
 
 			HideOtherPlayersSkillNotifications = Config.Bind("1. Notifications", "1. Hide skill level-up notifications of other characters", true,
 				"Bots/NPCs also level up their skills (a lot, with high skill multipliers). Only your own character should be able to show the skill and weapon mastery level-up notifications.");
@@ -161,6 +181,20 @@ namespace CustomRpTweaks.Client
 			Migrate(DismantleHotkey, "10. Disassemble", "1. Disassemble hotkey");
 			Migrate(DismantleNonVitalHotkey, "10. Disassemble", "4. Disassemble non-vital parts hotkey");
 			Migrate(DismantleInRaid, "10. Disassemble", "3. Allow in a raid");
+
+			EmptyHotkey = Config.Bind("10c. Empty", "1. Empty hotkey", new KeyboardShortcut(KeyCode.E, KeyCode.LeftControl),
+				"Hover a container (a backpack, rig, case, pouch) and press this to move everything lying in it out, to the first place that takes it: the container it lies in, then any container whoever carries it has (a corpse's, then yours), then any inventory you have open, then in the menu the stash (your own gear) or what you carry (someone else's). Items that hold items move whole. Whatever finds no place, or the game refuses, stays and a message says how many. Unassign the key to turn the feature off.");
+			EmptyInRaid = Config.Bind("10c. Empty", "2. Allow in a raid", true,
+				"Also works in a raid inventory (your own gear, a body, a bag you opened).");
+
+			ContextMenuEntries = Config.Bind("18. Context menu", "1. Dismantle and Empty in the context menu", true,
+				"Right-click an item: Dismantle goes next to Disassemble on a weapon (with a submenu: dismantle all, dismantle non-vital) and next to Modding on anything else that has parts attached (armor, rigs, helmets: a plain button). Empty goes next to Open on a container, greyed out when there is nothing in it. Takes effect the next time the menu opens.");
+			ReplaceDisassemble = Config.Bind("18. Context menu", "2. Replace Disassemble with Dismantle on weapons", true,
+				"On a weapon the game's own Disassemble button is hidden and Dismantle takes its place. Only when Dismantle is offered for that weapon (it has parts attached, and the in-raid setting allows it). Off: both are listed.");
+			new ItemMenuAddPatch().Enable();
+			new ItemMenuButtonPatch().Enable();
+			new ItemMenuTrackPatch().Enable();
+			new ItemMenuSidePatch().Enable();
 
 			EquipPlateHotkey = Config.Bind("11. Equip plate", "1. Equip plate hotkey", new KeyboardShortcut(KeyCode.I),
 				"Hover an armor plate in the stash and press this to put it into the first free plate slot of the armor, rig or helmet you wear that accepts it. The game's own rules decide what fits. Not in a raid. Unassign the key to turn the feature off.");

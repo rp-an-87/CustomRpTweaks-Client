@@ -139,12 +139,18 @@ namespace CustomRpTweaks.Client
 				hints.AddRange(UiFixesHints.For(uiContext, item, KeyLabel));
 			}
 
+			if (Empty.IsApplicable(item))
+			{
+				Add(Plugin.EmptyHotkey, "empty");
+			}
+
 			// Last: it is the heaviest action
 			if (Dismantle.IsApplicable(item, out var hasVitalParts))
 			{
-				// With vital parts the two hotkeys differ, so say how; without them they do the same
-				Add(Plugin.DismantleHotkey, hasVitalParts ? "dismantle all" : "dismantle");
-				if (hasVitalParts)
+				// Only a weapon's vital parts are worth telling apart (as in the context menu); without them the two hotkeys do the same
+				var tellApart = hasVitalParts && item is Weapon;
+				Add(Plugin.DismantleHotkey, tellApart ? "dismantle all" : "dismantle");
+				if (tellApart)
 				{
 					Add(Plugin.DismantleNonVitalHotkey, "dismantle non-vital");
 				}
