@@ -71,7 +71,7 @@ namespace CustomRpTweaks.Client
 			{
 				if (!Chainloader.PluginInfos.TryGetValue(TargetGuid, out var info) || info.Instance == null)
 				{
-					Plugin.Log.LogInfo($"{TargetGuid} not found, Mag Drills loading speed does nothing.");
+					Plugin.Verbose($"{TargetGuid} not found, Mag Drills loading speed does nothing.");
 					return;
 				}
 				var property = info.Instance.GetType().GetProperty("SpeedLimit", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
@@ -82,7 +82,7 @@ namespace CustomRpTweaks.Client
 					Plugin.Log.LogWarning($"{TargetGuid} has no 'SpeedLimit' setting of the expected type (changed in an update?), Mag Drills loading speed does nothing.");
 					return;
 				}
-				Plugin.Log.LogInfo($"Mag Drills loading speed hooked to {TargetGuid} (its Speed Limit is {_target.Value}).");
+				Plugin.Verbose($"Mag Drills loading speed hooked to {TargetGuid} (its Speed Limit is {_target.Value}).");
 			}
 			catch (Exception e)
 			{

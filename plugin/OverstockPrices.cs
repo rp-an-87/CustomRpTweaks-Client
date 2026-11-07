@@ -120,7 +120,7 @@ namespace CustomRpTweaks.Client
 			_serverOff = true;
 			_seed = new Dictionary<string, Dictionary<string, double>>();
 			_baseline.Clear();
-			Plugin.Log.LogInfo("Price indicator off until the game restarts: " + reason);
+			Plugin.Verbose("Price indicator off until the game restarts: " + reason);
 		}
 	}
 }

@@ -35,7 +35,7 @@ namespace CustomRpTweaks.Client
 							}
 						}
 
-						Plugin.Log.LogInfo(_for != null ? "GetReady found: its hotkey hints (top up, repair) are shown." : "GetReady not found: no hints for its hotkeys.");
+						Plugin.Verbose(_for != null ? "GetReady found: its hotkey hints (top up, repair) are shown." : "GetReady not found: no hints for its hotkeys.");
 					}
 					catch (Exception e)
 					{

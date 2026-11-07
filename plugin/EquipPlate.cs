@@ -86,12 +86,12 @@ namespace CustomRpTweaks.Client
 							return;
 						}
 
-						Plugin.Log.LogInfo($"Equip plate: {plate.ShortName.Localized()} into {armor.ShortName.Localized()}");
+						Plugin.Verbose($"Equip plate: {plate.ShortName.Localized()} into {armor.ShortName.Localized()}");
 						return;
 					}
 				}
 
-				Plugin.Log.LogInfo($"Equip plate: no worn armor has a free slot for {plate.ShortName.Localized()}");
+				Plugin.Verbose($"Equip plate: no worn armor has a free slot for {plate.ShortName.Localized()}");
 			}
 			catch (Exception e)
 			{

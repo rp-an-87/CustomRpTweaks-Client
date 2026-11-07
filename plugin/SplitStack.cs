@@ -62,7 +62,7 @@ namespace CustomRpTweaks.Client
 							continue;
 						}
 
-						Plugin.Log.LogInfo($"Split: {item.ShortName.Localized()} x{count} into {target.ShortName.Localized()} (targets in order: {string.Join(", ", Dismantle.Targets(controller, item).Select(t => t.ShortName.Localized()).ToArray())})");
+						Plugin.Verbose($"Split: {item.ShortName.Localized()} x{count} into {target.ShortName.Localized()} (targets in order: {string.Join(", ", Dismantle.Targets(controller, item).Select(t => t.ShortName.Localized()).ToArray())})");
 							var outcome = await ItemUiContext.RunWithSound(controller, item, operation);
 						if (outcome.Failed)
 						{
@@ -73,7 +73,7 @@ namespace CustomRpTweaks.Client
 					}
 				}
 
-				Plugin.Log.LogInfo($"Split: {item.ShortName.Localized()} not split ({refusal ?? "no free place"})");
+				Plugin.Verbose($"Split: {item.ShortName.Localized()} not split ({refusal ?? "no free place"})");
 				NotificationManager.DisplayMessageNotification(refusal == null ? "Split: no room for the new stack." : "Split: the game doesn't allow it here.");
 			}
 			catch (Exception e)

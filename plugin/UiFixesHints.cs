@@ -120,7 +120,7 @@ namespace CustomRpTweaks.Client
 					"Needs the UI Fixes mod. Adds the item shortcuts of UI Fixes that work on the hovered item to the hotkey hints at the end of the tooltip, with the keys set in UI Fixes. Each shortcut can be switched off below; a shortcut you cleared in UI Fixes isn't shown.");
 				_maxHints = config.Bind("14. UI Fixes hints", "2. Most UI Fixes hints per tooltip", 6,
 					new ConfigDescription("Keeps the tooltip short when many shortcuts apply to an item. Shortcuts that share a key count as one.", new AcceptableValueRange<int>(1, 20)));
-				Plugin.Log.LogInfo(_found ? $"UI Fixes found: hints for {Rules.Count(rule => rule.Key != null)} of its shortcuts." : "UI Fixes found, but none of the shortcut settings the hints need.");
+				Plugin.Verbose(_found ? $"UI Fixes found: hints for {Rules.Count(rule => rule.Key != null)} of its shortcuts." : "UI Fixes found, but none of the shortcut settings the hints need.");
 			}
 			catch (Exception e)
 			{
