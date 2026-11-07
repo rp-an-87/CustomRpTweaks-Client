@@ -83,6 +83,13 @@ namespace CustomRpTweaks.Client
 			var hovered = uiContext?.CurrentItemContext?.Item;
 			var item = hovered as CompoundItem;
 			var controller = uiContext == null ? null : ControllerField.GetValue(uiContext) as InventoryController;
+			// Vital parts are a weapon thing: for anything else the non-vital hotkey does nothing
+			if (keepVital && !(item is Weapon))
+			{
+				Plugin.Verbose($"Dismantle: non-vital hotkey ignored, {(hovered == null ? "nothing hovered" : NameOf(hovered) + " is not a weapon")}");
+				return;
+			}
+
 			if (item == null || controller == null || (InGameStatus.InRaid && !Plugin.DismantleInRaid.Value))
 			{
 				Plugin.Verbose($"Dismantle: nothing done, hovered item: {(hovered == null ? "none" : NameOf(hovered) + " (" + hovered.GetType().Name + ")")}, controller: {controller != null}, in raid: {InGameStatus.InRaid}");
