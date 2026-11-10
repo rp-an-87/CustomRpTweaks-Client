@@ -45,6 +45,7 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<int> TopRowsToKeepFree;
 		internal static ConfigEntry<bool> KeepSpeedWhileZooming;
 		internal static ConfigEntry<bool> SteadyAimHoldBreathFix;
+		internal static ConfigEntry<bool> FleaOfferTimerFix;
 
 		internal static ConfigEntry<bool> ScaleLoadAmmoSpeed;
 		internal static ConfigEntry<float> LoadAmmoSpeedAtLevel0;
@@ -149,6 +150,10 @@ namespace CustomRpTweaks.Client
 			SteadyAimHoldBreathFix = Config.Bind("16. Aiming", "1. Fix holding breath during the steady aim perk", true,
 				"The elite weapon draw perk (Aim Drills and weapon skills) steadies your aim for 3 seconds after you start aiming, but the game applies it even while you hold your breath, and the aim then drifts as the 3 seconds run out. With this on, holding your breath during those seconds steadies the aim as it normally does, and the perk applies again if you release the breath within them.");
 			new SteadyAimBreathPatch().Enable();
+
+			FleaOfferTimerFix = Config.Bind("19. Flea market", "1. Fix expired offers staying listed", true,
+				"A game bug: listing a new flea market offer cancels the expiry timers of your older offers. They then only disappear from your offer list while the flea market screen is open, otherwise they stay (the offer counter stays full and you cannot list) until you restart the game. With this on, the timers of all your offers are restarted whenever the offer list is updated. Takes effect after a restart.");
+			new FleaOfferTimerPatch().Enable();
 
 			// Only offered when Continuous Load Ammo is installed (it is a soft dependency, so it has loaded before us)
 			if (Chainloader.PluginInfos.ContainsKey(LoadAmmoSkillSpeed.TargetGuid))
