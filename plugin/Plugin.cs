@@ -22,8 +22,6 @@ namespace CustomRpTweaks.Client
 		internal static Plugin Instance;
 
 		internal static ConfigEntry<bool> VerboseLogging;
-		internal static ConfigEntry<bool> LogWeather;
-		internal static ConfigEntry<bool> DrawServerFog;
 
 		// Routine progress messages (what a hotkey did, which optional mods were found); warnings and errors always go to the log
 		internal static void Verbose(string message)
@@ -113,10 +111,6 @@ namespace CustomRpTweaks.Client
 
 			VerboseLogging = Config.Bind("17. Logging", "1. Verbose logging", false,
 				"Writes a line to the BepInEx log for every step of Dismantle, Empty, Split, Equip plate, Hand in and Unchamber, and for optional mods found at startup. Warnings and errors are always logged. For troubleshooting.");
-			LogWeather = Config.Bind("17. Logging", "2. Log raid weather", true,
-				"Writes to the BepInEx log the weather the game receives from the server when a raid loads (fog, rain, clouds, wind of the first node), and six times in the raid (every 5 seconds) the fog and rain it is drawing. For checking weather events. Takes effect after a restart.");
-			new WeatherNodesPatch().Enable();
-			new WeatherFogPatch().Enable();
 
 			HideOtherPlayersSkillNotifications = Config.Bind("1. Notifications", "1. Hide skill level-up notifications of other characters", true,
 				"Bots/NPCs also level up their skills (a lot, with high skill multipliers). Only your own character should be able to show the skill and weapon mastery level-up notifications.");
@@ -163,16 +157,6 @@ namespace CustomRpTweaks.Client
 				"A game bug: listing a new flea market offer cancels the expiry timers of your older offers. They then only disappear from your offer list while the flea market screen is open, otherwise they stay (the offer counter stays full and you cannot list) until you restart the game. With this on, the timers of all your offers are restarted whenever the offer list is updated. Takes effect after a restart.");
 			new FleaOfferTimerPatch().Enable();
 
-			DrawServerFog = Config.Bind("21. Weather", "1. Draw server fog in normal weather", true,
-				"The game draws the fog of the raid weather (for example a Season Rotator weather event) only while the weather debug mode of the Time & Weather panel is on. With this on, the fog is also drawn in normal weather, the same way the panel does it. Affects all fog, natural fog too. Takes effect after a restart.");
-			try
-			{
-				new WeatherFogDrawPatch().Enable();
-			}
-			catch (System.Exception e)
-			{
-				Log.LogError("The fog drawing patch could not be applied, the rest of the plugin is not affected: " + e);
-			}
 
 			TaskSearchBox = Config.Bind("20. Tasks screen", "1. Search box", true,
 				"Adds a search box to the right of the Active / Operational tasks toggles on the tasks screen. Type words to narrow the list to the tasks whose name, trader or location contain all of them (any word in any of the three, upper or lower case). The red cross in the box clears it. The box is emptied each time the screen opens. Takes effect the next time the tasks screen opens.");
