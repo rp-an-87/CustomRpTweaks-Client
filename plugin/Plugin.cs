@@ -23,6 +23,7 @@ namespace CustomRpTweaks.Client
 
 		internal static ConfigEntry<bool> VerboseLogging;
 		internal static ConfigEntry<bool> LogWeather;
+		internal static ConfigEntry<bool> DrawServerFog;
 
 		// Routine progress messages (what a hotkey did, which optional mods were found); warnings and errors always go to the log
 		internal static void Verbose(string message)
@@ -161,6 +162,10 @@ namespace CustomRpTweaks.Client
 			FleaOfferTimerFix = Config.Bind("19. Flea market", "1. Fix expired offers staying listed", true,
 				"A game bug: listing a new flea market offer cancels the expiry timers of your older offers. They then only disappear from your offer list while the flea market screen is open, otherwise they stay (the offer counter stays full and you cannot list) until you restart the game. With this on, the timers of all your offers are restarted whenever the offer list is updated. Takes effect after a restart.");
 			new FleaOfferTimerPatch().Enable();
+
+			DrawServerFog = Config.Bind("21. Weather", "1. Draw the server's fog in normal weather", true,
+				"The game draws the fog of the raid weather (for example a Season Rotator weather event) only while the weather debug mode of the Time & Weather panel is on. With this on, the fog is also drawn in normal weather, the same way the panel does it. Affects all fog, natural fog too. Takes effect after a restart.");
+			new WeatherFogDrawPatch().Enable();
 
 			TaskSearchBox = Config.Bind("20. Tasks screen", "1. Search box", true,
 				"Adds a search box to the right of the Active / Operational tasks toggles on the tasks screen. Type words to narrow the list to the tasks whose name, trader or location contain all of them (any word in any of the three, upper or lower case). The red cross in the box clears it. The box is emptied each time the screen opens. Takes effect the next time the tasks screen opens.");
