@@ -165,7 +165,14 @@ namespace CustomRpTweaks.Client
 
 			DrawServerFog = Config.Bind("21. Weather", "1. Draw the server's fog in normal weather", true,
 				"The game draws the fog of the raid weather (for example a Season Rotator weather event) only while the weather debug mode of the Time & Weather panel is on. With this on, the fog is also drawn in normal weather, the same way the panel does it. Affects all fog, natural fog too. Takes effect after a restart.");
-			new WeatherFogDrawPatch().Enable();
+			try
+			{
+				new WeatherFogDrawPatch().Enable();
+			}
+			catch (System.Exception e)
+			{
+				Log.LogError("The fog drawing patch could not be applied, the rest of the plugin is not affected: " + e);
+			}
 
 			TaskSearchBox = Config.Bind("20. Tasks screen", "1. Search box", true,
 				"Adds a search box to the right of the Active / Operational tasks toggles on the tasks screen. Type words to narrow the list to the tasks whose name, trader or location contain all of them (any word in any of the three, upper or lower case). The red cross in the box clears it. The box is emptied each time the screen opens. Takes effect the next time the tasks screen opens.");
