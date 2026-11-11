@@ -22,6 +22,7 @@ namespace CustomRpTweaks.Client
 		internal static Plugin Instance;
 
 		internal static ConfigEntry<bool> VerboseLogging;
+		internal static ConfigEntry<bool> LogSprintStops;
 
 		// Routine progress messages (what a hotkey did, which optional mods were found); warnings and errors always go to the log
 		internal static void Verbose(string message)
@@ -88,6 +89,7 @@ namespace CustomRpTweaks.Client
 		private void Update()
 		{
 			LoadAmmoSkillSpeed.Update();
+			SprintStopLogPatch.Update();
 			Dismantle.Update();
 			Empty.Update();
 			Unchamber.Update();
@@ -128,6 +130,10 @@ namespace CustomRpTweaks.Client
 			SkillLevelOvershoot = Config.Bind("2. Skill throttle", "2. Allowed levels above PMC level", 0,
 				new ConfigDescription("How many levels above your PMC level a skill is still allowed to reach. 0 = skills are capped at your PMC level.",
 					new AcceptableValueRange<int>(0, 20)));
+
+			LogSprintStops = Config.Bind("17. Logging", "2. Log sprint stops", false,
+				"Writes a [SprintStop] line to the BepInEx log every time your sprint ends: what called it (the mod or game code), stamina, weight and leg conditions. Use it to find what keeps cancelling your sprint, then turn it off. For troubleshooting.");
+			new SprintStopLogPatch().Enable();
 
 			LogThrottleDecisions = Config.Bind("2. Skill throttle", "3. Log throttle decisions", false,
 				"Writes to the BepInEx log (at most once every 5 seconds per skill) what the throttle did to skill experience gains, and why it didn't apply when it didn't. For troubleshooting.");
