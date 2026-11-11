@@ -46,6 +46,7 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<bool> KeepSpeedWhileZooming;
 		internal static ConfigEntry<bool> SteadyAimHoldBreathFix;
 		internal static ConfigEntry<bool> FleaOfferTimerFix;
+		internal static ConfigEntry<bool> TaskSearchBox;
 
 		internal static ConfigEntry<bool> ScaleLoadAmmoSpeed;
 		internal static ConfigEntry<float> LoadAmmoSpeedAtLevel0;
@@ -86,6 +87,7 @@ namespace CustomRpTweaks.Client
 			Unchamber.Update();
 			EquipPlate.Update();
 			SplitStack.Update();
+			ServerTime.Update();
 		}
 
 		// A renamed setting takes over the value it had under its old name, if the config file still has one
@@ -154,6 +156,11 @@ namespace CustomRpTweaks.Client
 			FleaOfferTimerFix = Config.Bind("19. Flea market", "1. Fix expired offers staying listed", true,
 				"A game bug: listing a new flea market offer cancels the expiry timers of your older offers. They then only disappear from your offer list while the flea market screen is open, otherwise they stay (the offer counter stays full and you cannot list) until you restart the game. With this on, the timers of all your offers are restarted whenever the offer list is updated. Takes effect after a restart.");
 			new FleaOfferTimerPatch().Enable();
+
+			TaskSearchBox = Config.Bind("20. Tasks screen", "1. Search box", true,
+				"Adds a search box to the right of the Active / Operational tasks toggles on the tasks screen. Type words to narrow the list to the tasks whose name, trader or location contain all of them (any word in any of the three, upper or lower case). The red cross in the box clears it. The box is emptied each time the screen opens. Takes effect the next time the tasks screen opens.");
+			new TaskSearchPatches.ScreenShowPatch().Enable();
+			new TaskSearchPatches.ShowQuestsPatch().Enable();
 
 			// Only offered when Continuous Load Ammo is installed (it is a soft dependency, so it has loaded before us)
 			if (Chainloader.PluginInfos.ContainsKey(LoadAmmoSkillSpeed.TargetGuid))
@@ -253,6 +260,8 @@ namespace CustomRpTweaks.Client
 			new OverstockPricePatches.TraderGridPricePatch().Enable();
 			new OverstockPricePatches.TraderTooltipPatch().Enable();
 			new OverstockPricePatches.FleaRowPricePatch().Enable();
+
+			ServerTime.Setup(Config);
 		}
 	}
 }
