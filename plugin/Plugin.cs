@@ -163,7 +163,7 @@ namespace CustomRpTweaks.Client
 				"A game bug: listing a new flea market offer cancels the expiry timers of your older offers. They then only disappear from your offer list while the flea market screen is open, otherwise they stay (the offer counter stays full and you cannot list) until you restart the game. With this on, the timers of all your offers are restarted whenever the offer list is updated. Takes effect after a restart.");
 			new FleaOfferTimerPatch().Enable();
 
-			DrawServerFog = Config.Bind("21. Weather", "1. Draw the server's fog in normal weather", true,
+			DrawServerFog = Config.Bind("21. Weather", "1. Draw server fog in normal weather", true,
 				"The game draws the fog of the raid weather (for example a Season Rotator weather event) only while the weather debug mode of the Time & Weather panel is on. With this on, the fog is also drawn in normal weather, the same way the panel does it. Affects all fog, natural fog too. Takes effect after a restart.");
 			try
 			{
