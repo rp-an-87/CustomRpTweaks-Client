@@ -51,6 +51,8 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<float> BtrCannonCamDistance;
 		internal static ConfigEntry<float> BtrCannonCamHeight;
 		internal static ConfigEntry<float> BtrCannonCamSmoothing;
+		internal static ConfigEntry<float> BtrCannonCamTransition;
+		internal static ConfigEntry<bool> BtrCannonCamFirstPersonInScreens;
 
 		internal static ConfigEntry<bool> ScaleLoadAmmoSpeed;
 		internal static ConfigEntry<float> LoadAmmoSpeedAtLevel0;
@@ -169,6 +171,10 @@ namespace CustomRpTweaks.Client
 				new ConfigDescription("Metres the camera sits above the cannon's muzzle. Negative values put it below. Changes apply live.", new AcceptableValueRange<float>(-2f, 5f)));
 			BtrCannonCamSmoothing = Config.Bind("21. BTR", "4. Camera smoothing", 0.3f,
 				new ConfigDescription("Seconds the camera takes to catch up with the cannon's direction (its position catches up four times faster). Higher = steadier but laggier. 0 = no smoothing (twitchy). Changes apply live.", new AcceptableValueRange<float>(0f, 1.5f)));
+			BtrCannonCamTransition = Config.Bind("21. BTR", "5. Transition time", 0.9f,
+				new ConfigDescription("Seconds the camera takes to glide between your normal view and the cannon view, both ways (when the BTR starts or stops, you get out, or a screen opens or closes). 0 = instant cut. Changes apply live.", new AcceptableValueRange<float>(0f, 3f)));
+			BtrCannonCamFirstPersonInScreens = Config.Bind("21. BTR", "6. First person while a screen is open", true,
+				"While the BTR drives you, the camera goes back to your normal first-person view when you open your inventory or talk to the driver (or any other full screen is open), and returns to the cannon view when you close it. Changes apply live.");
 			new BtrCannonCamPatch().Enable();
 
 
