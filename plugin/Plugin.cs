@@ -22,6 +22,7 @@ namespace CustomRpTweaks.Client
 		internal static Plugin Instance;
 
 		internal static ConfigEntry<bool> VerboseLogging;
+		internal static ConfigEntry<bool> LogWeather;
 
 		// Routine progress messages (what a hotkey did, which optional mods were found); warnings and errors always go to the log
 		internal static void Verbose(string message)
@@ -111,6 +112,10 @@ namespace CustomRpTweaks.Client
 
 			VerboseLogging = Config.Bind("17. Logging", "1. Verbose logging", false,
 				"Writes a line to the BepInEx log for every step of Dismantle, Empty, Split, Equip plate, Hand in and Unchamber, and for optional mods found at startup. Warnings and errors are always logged. For troubleshooting.");
+			LogWeather = Config.Bind("17. Logging", "2. Log raid weather", true,
+				"Writes to the BepInEx log the weather the game receives from the server when a raid loads (fog, rain, clouds, wind of the first node), and six times in the raid (every 5 seconds) the fog and rain it is drawing. For checking weather events. Takes effect after a restart.");
+			new WeatherNodesPatch().Enable();
+			new WeatherFogPatch().Enable();
 
 			HideOtherPlayersSkillNotifications = Config.Bind("1. Notifications", "1. Hide skill level-up notifications of other characters", true,
 				"Bots/NPCs also level up their skills (a lot, with high skill multipliers). Only your own character should be able to show the skill and weapon mastery level-up notifications.");
