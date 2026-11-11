@@ -47,6 +47,7 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<bool> SteadyAimHoldBreathFix;
 		internal static ConfigEntry<bool> FleaOfferTimerFix;
 		internal static ConfigEntry<bool> TaskSearchBox;
+		internal static ConfigEntry<bool> BtrCannonCam;
 
 		internal static ConfigEntry<bool> ScaleLoadAmmoSpeed;
 		internal static ConfigEntry<float> LoadAmmoSpeedAtLevel0;
@@ -156,6 +157,10 @@ namespace CustomRpTweaks.Client
 			FleaOfferTimerFix = Config.Bind("19. Flea market", "1. Fix expired offers staying listed", true,
 				"A game bug: listing a new flea market offer cancels the expiry timers of your older offers. They then only disappear from your offer list while the flea market screen is open, otherwise they stay (the offer counter stays full and you cannot list) until you restart the game. With this on, the timers of all your offers are restarted whenever the offer list is updated. Takes effect after a restart.");
 			new FleaOfferTimerPatch().Enable();
+
+			BtrCannonCam = Config.Bind("21. BTR", "1. Cannon camera while the BTR drives you", true,
+				"While the BTR is driving you somewhere (you are inside it and it is moving), the camera is moved to its turret and looks where the cannon points. Your character stays in the BTR and is visible. When the BTR stops, you get out, or you turn this off, the normal first-person view is back on the next frame.");
+			new BtrCannonCamPatch().Enable();
 
 
 			TaskSearchBox = Config.Bind("20. Tasks screen", "1. Search box", true,
