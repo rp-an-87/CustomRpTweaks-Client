@@ -48,6 +48,9 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<bool> FleaOfferTimerFix;
 		internal static ConfigEntry<bool> TaskSearchBox;
 		internal static ConfigEntry<bool> BtrCannonCam;
+		internal static ConfigEntry<float> BtrCannonCamDistance;
+		internal static ConfigEntry<float> BtrCannonCamHeight;
+		internal static ConfigEntry<float> BtrCannonCamSmoothing;
 
 		internal static ConfigEntry<bool> ScaleLoadAmmoSpeed;
 		internal static ConfigEntry<float> LoadAmmoSpeedAtLevel0;
@@ -160,6 +163,12 @@ namespace CustomRpTweaks.Client
 
 			BtrCannonCam = Config.Bind("21. BTR", "1. Cannon camera while the BTR drives you", true,
 				"While the BTR is driving you somewhere (you are inside it and it is moving), the camera is moved to its turret and looks where the cannon points. Your character stays in the BTR and is visible. When the BTR stops, you get out, or you turn this off, the normal first-person view is back on the next frame.");
+			BtrCannonCamDistance = Config.Bind("21. BTR", "2. Camera distance behind the cannon", 3f,
+				new ConfigDescription("Metres the camera sits behind the cannon's muzzle, along its line. Too small and the camera is inside the barrel. Changes apply live.", new AcceptableValueRange<float>(0f, 10f)));
+			BtrCannonCamHeight = Config.Bind("21. BTR", "3. Camera height above the cannon", 1.2f,
+				new ConfigDescription("Metres the camera sits above the cannon's muzzle. Negative values put it below. Changes apply live.", new AcceptableValueRange<float>(-2f, 5f)));
+			BtrCannonCamSmoothing = Config.Bind("21. BTR", "4. Camera smoothing", 0.3f,
+				new ConfigDescription("Seconds the camera takes to catch up with the cannon's direction (its position catches up four times faster). Higher = steadier but laggier. 0 = no smoothing (twitchy). Changes apply live.", new AcceptableValueRange<float>(0f, 1.5f)));
 			new BtrCannonCamPatch().Enable();
 
 
