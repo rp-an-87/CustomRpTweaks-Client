@@ -267,6 +267,7 @@ namespace CustomRpTweaks.Client
 				"Adds a small line below a separator at the end of the tooltip of an item in your inventory with the hotkeys of this mod that apply to it right now: top up (a magazine that isn't full), repair (a damaged item that one of your kits can repair), equip plate, and dismantle (an item with attached parts; the keep-vital one only when some of them are in required slots). The keys shown are the ones configured. Not shown for items of traders, the flea market or the mail. Turn it off if another mod's tooltip lines clash with it.");
 			// Only offered when UI Fixes is installed (a soft dependency, so it has loaded before us)
 			UiFixesHints.Setup(Config);
+			SelectAllOfKind.Setup(Config);
 			new HotkeyHintPatches.HoverEnterPatch().Enable();
 			new HotkeyHintPatches.HoverExitPatch().Enable();
 			new HotkeyHintPatches.ItemTooltipPatch().Enable();
