@@ -363,7 +363,7 @@ namespace CustomRpTweaks.Client
 
 				var counted = need.Owned >= need.Required ? need.Owned : (need.ToBuy == 0 || need.CannotBuy ? need.Held : need.Owned);
 				var text = $"{need.Name} <color={(counted >= need.Required ? Green : Yellow)}>{counted}/{need.Required}</color>";
-				if (need.ToBuy > 0 && need.FirHeld > 0 && src.Buying == Mode.Missing && src.FirAsMissing && src.Consumed(need.Requirement) && !src.NeedsFir(need.Requirement))
+				if (need.FirHeld > 0 && src.Buying == Mode.Missing && src.FirAsMissing && src.Consumed(need.Requirement) && !src.NeedsFir(need.Requirement))
 				{
 					var covers = need.Shortfall > 0 && need.FirHeld >= need.Shortfall ? "; would cover the gap" : "";
 					text += $" ({need.FirHeld} FiR, ignored{covers})";
