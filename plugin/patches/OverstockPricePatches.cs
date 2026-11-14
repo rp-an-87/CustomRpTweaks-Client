@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
@@ -10,6 +11,8 @@ using EFT.UI;
 using EFT.UI.DragAndDrop;
 using EFT.UI.Ragfair;
 using SPT.Reflection.Patching;
+using TMPro;
+using UnityEngine;
 using SPT.Reflection.Utils;
 
 namespace CustomRpTweaks.Client.Patches
@@ -144,6 +147,79 @@ namespace CustomRpTweaks.Client.Patches
 				var label = ___ItemUiContext.PriceTooltip._price;
 				label.enableWordWrapping = false;
 				label.text = "<size=75%><color=" + Plugin.PriceIndicatorOldColor.Value + "><s>" + basePrice + "</s></color></size> " + Raised(price.Value.Amount.ToString());
+			}
+		}
+
+		// Trader screen, the items a barter asks for ("3/11"): the server raises the count of each item, so a raised one is drawn in the colour
+		internal class TraderBarterCountPatch : ModulePatch
+		{
+			protected override MethodBase GetTargetMethod() => typeof(TradingRequisitePanel).GetMethod(nameof(TradingRequisitePanel.UpdateValues), BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly);
+
+			[PatchPostfix]
+			private static void Postfix(TradingRequisitePanel __instance, Requisite ____requisite, Assortment ____traderAssortment)
+			{
+				if (!OverstockPrices.Active || ____requisite == null || ____traderAssortment == null)
+				{
+					return;
+				}
+
+				var selected = ____traderAssortment.SelectedItem;
+				var trader = ____traderAssortment._trader;
+				int required = ____requisite.RequiredItemsCount;
+				if (selected == null || trader == null || required < 1 || required >= int.MaxValue || ____requisite.IsDogtagRequired || !__instance._count.gameObject.activeSelf)
+				{
+					return;
+				}
+
+				string offerId = selected.Id.ToString();
+				if (OverstockPrices.IsRaised('b', trader.Id, offerId + ":" + ____requisite.RequiredItem.TemplateId, required, out _, offerId))
+				{
+					__instance._count.text = "<color=#dadabc>" + ____requisite.PreparedItemsCount + "/" + Raised(required.ToString()) + "</color>";
+				}
+			}
+		}
+
+		// Flea market, a trader's barter offer: the same for the counts of the items it asks for. UI Fixes draws these ("3/11") after the game
+		// has made the row, so the count is recoloured a frame later, whichever mod's code ran first.
+		internal class FleaBarterCountPatch : ModulePatch
+		{
+			protected override MethodBase GetTargetMethod() => typeof(OfferItemPriceBarter).GetMethod(nameof(OfferItemPriceBarter.Show), BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly);
+
+			[PatchPostfix]
+			private static void Postfix(OfferItemPriceBarter __instance, IExchangeRequirement requirement, Offer offer, bool expanded)
+			{
+				if (!OverstockPrices.Active || !expanded || offer == null || offer.NotAvailable || offer.OnlyMoney || offer.MemberType != EMemberCategory.Trader || offer.Item == null)
+				{
+					return;
+				}
+
+				string offerId = offer.Item.Id.ToString();
+				if (OverstockPrices.IsRaised('f', offer.User.Id.ToString(), offerId + ":" + requirement.TemplateId, requirement.IntCount, out _, offerId))
+				{
+					Plugin.Instance.StartCoroutine(Recolor(__instance));
+				}
+			}
+
+			private static IEnumerator Recolor(OfferItemPriceBarter view)
+			{
+				yield return null;
+				if (view == null)
+				{
+					yield break;
+				}
+
+				foreach (var label in view.GetComponentsInChildren<TMP_Text>(true))
+				{
+					// "<color=#C5C3B2><b>3</b></color>/11": the part after the slash is the count asked for
+					string text = label.text;
+					int slash = text == null ? -1 : text.IndexOf("</color>/", StringComparison.Ordinal);
+					if (slash < 0 || text.IndexOf("<color=", slash, StringComparison.Ordinal) >= 0)
+					{
+						continue;
+					}
+
+					label.text = text.Substring(0, slash + 9) + Raised(text.Substring(slash + 9));
+				}
 			}
 		}
 

@@ -27,8 +27,9 @@ namespace CustomRpTweaks.Client
 
 		internal static bool Active => Plugin.PriceIndicator != null && Plugin.PriceIndicator.Value && !_serverOff;
 
-		// Notes the price an offer is shown at. True when it is above the base price, which comes back in basePrice.
-		internal static bool IsRaised(char screen, string traderId, string offerId, int price, out int basePrice)
+		// Notes the price an offer is shown at. True when it is above the base price, which comes back in basePrice. offerId only has to be
+		// unique per thing shown (a barter requirement is the offer plus the item); seedOfferId is the offer's own id, which the server knows.
+		internal static bool IsRaised(char screen, string traderId, string offerId, int price, out int basePrice, string seedOfferId = null)
 		{
 			basePrice = price;
 			if (!Active || price < 1)
@@ -40,7 +41,7 @@ namespace CustomRpTweaks.Client
 			if (!_baseline.TryGetValue(key, out int lowest))
 			{
 				lowest = price;
-				if (_seed.TryGetValue(traderId, out var offers) && offers.TryGetValue(offerId, out double multiplier) && multiplier > 1)
+				if (_seed.TryGetValue(traderId, out var offers) && offers.TryGetValue(seedOfferId ?? offerId, out double multiplier) && multiplier > 1)
 				{
 					lowest = (int)Math.Round(price / multiplier);
 				}

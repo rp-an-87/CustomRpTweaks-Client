@@ -108,8 +108,8 @@ namespace CustomRpTweaks.Client
 			label.color = new Color(0.82f, 0.81f, 0.74f, 1f);
 			label.alignment = TextAlignmentOptions.Center;
 			label.enableAutoSizing = true;
-			label.fontSizeMin = 6f;
-			label.fontSizeMax = 9f;
+			label.fontSizeMin = 5f;
+			label.fontSizeMax = 8f;
 			label.enableWordWrapping = false;
 			label.raycastTarget = false;
 			var rect = (RectTransform)caption.transform;
@@ -125,7 +125,7 @@ namespace CustomRpTweaks.Client
 	internal class QuickBuyRow : MonoBehaviour
 	{
 		internal const float Width = 96f;
-		internal const float Height = 14f;
+		internal const float Height = 12f;
 
 		public RectTransform Label;
 		public OfferView View;
@@ -142,12 +142,12 @@ namespace CustomRpTweaks.Client
 			var scale = rect.lossyScale.y;
 			Label.GetWorldCorners(_corners);
 			var centerX = (_corners[0].x + _corners[3].x) / 2f;
-			var bottom = _corners[0].y - 2f * scale - Height * scale;
+			var bottom = _corners[0].y - Height * scale;
 			var viewRect = View == null ? null : View.transform as RectTransform;
 			if (viewRect != null)
 			{
 				viewRect.GetWorldCorners(_corners);
-				bottom = Mathf.Max(bottom, _corners[0].y + 2f * scale);
+				bottom = Mathf.Max(bottom, _corners[0].y + 1f * scale);
 			}
 
 			var target = new Vector3(centerX, bottom, rect.position.z);
