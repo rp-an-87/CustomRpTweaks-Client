@@ -57,7 +57,8 @@ namespace CustomRpTweaks.Client
 			Offer = offer,
 			Requirements = offer.Requirements,
 			Required = requirement => Required(offer, requirement),
-			Suitable = (item, requirement) => HandoverExtensions.AvailableToHandover(item, requirement),
+			// A container with something in it can't be handed over
+			Suitable = (item, requirement) => HandoverExtensions.AvailableToHandover(item, requirement) && item.IsExchangeable(false),
 			Stash = () => ragfair._tradingSession.Profile.Inventory.Stash.GetAllItemsFromCollection().ToList(),
 			UnbuyableBlocks = true,
 			Setting = Plugin.FleaBarterBuyMode.Value
@@ -67,7 +68,8 @@ namespace CustomRpTweaks.Client
 		{
 			Requirements = view.Scheme.RequiredItems.Where(requirement => Plugin.HideoutBuyTools.Value || !(requirement is ToolRequirement)).Cast<IExchangeRequirement>().ToArray(),
 			Required = requirement => requirement.IntCount,
-			Suitable = (item, requirement) => ItemRequirement.IsSuitableItem(requirement, item),
+			// The game's own pick for a craft: suitable and empty (a case with items in it is skipped)
+			Suitable = (item, requirement) => ItemRequirement.IsSuitableItem(requirement, item) && item.IsEmpty(),
 			Consumed = requirement => !(requirement is ToolRequirement),
 			NeedsFir = requirement => requirement.IsSpawnedInSession,
 			Stash = () => Singleton<HideoutRepresentation>.Instance.AllStashItems.Where(item => item != null).ToList(),
