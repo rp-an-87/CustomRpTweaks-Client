@@ -37,7 +37,6 @@ namespace CustomRpTweaks.Client
 			public int Spare;
 			public bool CannotBuy;
 			public readonly List<Pick> Picks = new List<Pick>();
-			public long Cost => Picks.Sum(pick => pick.Cost);
 			public int Bought => Picks.Sum(pick => pick.Count);
 		}
 
@@ -46,13 +45,26 @@ namespace CustomRpTweaks.Client
 			public Offer Offer;
 			public int Count;
 			public long Cost;
+			public ECurrencyType Currency;
 		}
 
 		private class Plan
 		{
 			public readonly List<Need> Needs = new List<Need>();
 			public readonly List<string> Problems = new List<string>();
-			public long Total => Needs.Sum(need => need.Cost);
+			public Dictionary<ECurrencyType, long> Totals()
+			{
+				var totals = new Dictionary<ECurrencyType, long>();
+				foreach (var pick in Needs.SelectMany(need => need.Picks))
+				{
+					totals.TryGetValue(pick.Currency, out var sum);
+					totals[pick.Currency] = sum + pick.Cost;
+				}
+
+				return totals;
+			}
+
+			public string TotalText => string.Join(" + ", Totals().Where(pair => pair.Value > 0).Select(pair => Amount(pair.Key, pair.Value)));
 			public int Bought => Needs.Sum(need => need.Bought);
 		}
 
@@ -63,7 +75,21 @@ namespace CustomRpTweaks.Client
 
 		private static void Notify(string message) => NotificationManager.DisplayMessageNotification(message);
 
-		private static string Roubles(long amount) => amount.ToString("N0", CultureInfo.InvariantCulture).Replace(",", " ") + " roubles";
+		private static string Amount(ECurrencyType currency, long amount) =>
+			amount.ToString("N0", CultureInfo.InvariantCulture).Replace(",", " ") + (currency == ECurrencyType.RUB ? " roubles" : currency == ECurrencyType.USD ? " USD" : currency == ECurrencyType.EUR ? " EUR" : " " + currency);
+
+		private static readonly ECurrencyType[] Currencies = { ECurrencyType.RUB, ECurrencyType.USD, ECurrencyType.EUR };
+
+		// What you hold of each currency the flea market is paid in (money that is locked doesn't count)
+		private static Dictionary<ECurrencyType, long> Wallet(IEnumerable<Item> items)
+		{
+			var money = items.OfType<Money>().Where(coin => coin.PinLockState != EItemPinLockState.Locked).ToList();
+			return Currencies.ToDictionary(currency => currency, currency =>
+			{
+				var id = CurrencyUtil.GetCurrencyId(currency);
+				return money.Where(coin => coin.TemplateId == id).Sum(coin => (long)coin.StackObjectsCount);
+			});
+		}
 
 		private static string NameOf(Item item) => item == null ? "?" : item.ShortName.Localized(null);
 
@@ -148,13 +174,14 @@ namespace CustomRpTweaks.Client
 
 			if (mode == Mode.Quote)
 			{
-				var missing = await MakePlan(ragfair, profile, offer, Mode.Missing, search);
-				var all = await MakePlan(ragfair, profile, offer, Mode.All, search);
-				Notify($"Barter cost: missing {Describe(missing)}; all {Describe(all)}.");
+				// The cost doesn't depend on what you hold: no limit from the money you have
+				var missing = await MakePlan(ragfair, profile, offer, Mode.Missing, search, null);
+				var all = await MakePlan(ragfair, profile, offer, Mode.All, search, null);
+				Notify($"Barter cost (not checked against your money): missing {Describe(missing)}; all {Describe(all)}.");
 				return;
 			}
 
-			var plan = await MakePlan(ragfair, profile, offer, mode, search);
+			var plan = await MakePlan(ragfair, profile, offer, mode, search, Wallet(profile.Inventory.Stash.GetAllItemsFromCollection()));
 			if (plan.Problems.Count > 0)
 			{
 				Notify("Quick buy: nothing bought. " + string.Join(" ", plan.Problems));
@@ -162,15 +189,8 @@ namespace CustomRpTweaks.Client
 			}
 
 			var stash = inventory.Stash.GetAllItemsFromCollection().ToList();
-			if (plan.Total > 0)
+			if (plan.Bought > 0)
 			{
-				var have = RoublesIn(stash);
-				if (have < plan.Total)
-				{
-					Notify($"Quick buy: nothing bought. It costs {Roubles(plan.Total)}, you have {Roubles(have)}.");
-					return;
-				}
-
 				var goods = new Dictionary<IExchangeable, int>();
 				foreach (var pick in plan.Needs.SelectMany(need => need.Picks))
 				{
@@ -197,7 +217,7 @@ namespace CustomRpTweaks.Client
 			}
 
 			var spare = plan.Needs.Sum(need => need.Spare);
-			var summary = plan.Bought == 0 ? "nothing needed buying" : $"bought {plan.Bought} item{(plan.Bought == 1 ? "" : "s")} for {Roubles(plan.Total)}" + (spare > 0 ? $" ({spare} spare in a pack)" : "");
+			var summary = plan.Bought == 0 ? "nothing needed buying" : $"bought {plan.Bought} item{(plan.Bought == 1 ? "" : "s")} for {plan.TotalText}" + (spare > 0 ? $" ({spare} spare in a pack)" : "");
 
 			if (!Plugin.FleaBarterBuyComplete.Value)
 			{
@@ -252,13 +272,7 @@ namespace CustomRpTweaks.Client
 				return "nothing to buy";
 			}
 
-			return $"{Roubles(plan.Total)} ({plan.Bought} item{(plan.Bought == 1 ? "" : "s")}: " + string.Join(", ", plan.Needs.Where(need => need.Bought > 0).Select(need => $"{need.Bought}x {need.Name}")) + ")";
-		}
-
-		private static long RoublesIn(IEnumerable<Item> items)
-		{
-			var rouble = CurrencyUtil.GetCurrencyId(ECurrencyType.RUB);
-			return items.OfType<Money>().Where(money => money.TemplateId == rouble && money.PinLockState != EItemPinLockState.Locked).Sum(money => (long)money.StackObjectsCount);
+			return $"{plan.TotalText} ({plan.Bought} item{(plan.Bought == 1 ? "" : "s")}: " + string.Join(", ", plan.Needs.Where(need => need.Bought > 0).Select(need => $"{need.Bought}x {need.Name}")) + ")";
 		}
 
 		private static int Required(Offer offer, IExchangeRequirement requirement) =>
@@ -299,7 +313,7 @@ namespace CustomRpTweaks.Client
 			return references;
 		}
 
-		private static async Task<Plan> MakePlan(RagFair ragfair, Profile profile, Offer offer, Mode mode, Dictionary<string, List<Offer>> search)
+		private static async Task<Plan> MakePlan(RagFair ragfair, Profile profile, Offer offer, Mode mode, Dictionary<string, List<Offer>> search, Dictionary<ECurrencyType, long> budget)
 		{
 			var plan = new Plan();
 			var stash = profile.Inventory.Stash.GetAllItemsFromCollection().ToList();
@@ -341,9 +355,9 @@ namespace CustomRpTweaks.Client
 					search[requirement.TemplateId] = offers;
 				}
 
-				if (!Allocate(need, offers))
+				if (!Allocate(need, offers, budget))
 				{
-					plan.Problems.Add($"Only {need.ToBuy - need.Shortfall} of {need.ToBuy} {need.Name} for sale for roubles.");
+					plan.Problems.Add($"Only {need.ToBuy - need.Shortfall} of {need.ToBuy} {need.Name} can be had with the money you hold.");
 				}
 			}
 
@@ -355,15 +369,17 @@ namespace CustomRpTweaks.Client
 		private static void Take(Need need, Offer offer, int count)
 		{
 			var cost = offer.SellInOnePiece ? offer.Requirements[0].IntCount : (long)Math.Ceiling(offer.Requirements[0].PreciseCount * count);
-			need.Picks.Add(new Pick { Offer = offer, Count = count, Cost = cost });
+			need.Picks.Add(new Pick { Offer = offer, Count = count, Cost = cost, Currency = offer.MoneyType });
 		}
 
 		// The cheapest offers first, per piece. A pack sold in one piece is only taken whole, and only when it fits in what is still needed;
 		// if packs are all that is left, the cheapest pack that covers it is bought whole (the rest of it is spare).
-		private static bool Allocate(Need need, List<Offer> offers)
+		// Roubles first, then dollars, then euro: the others only for what the roubles can't cover. budget is what you hold of each
+		// currency (spent as offers are taken), or null for no limit.
+		private static bool Allocate(Need need, List<Offer> offers, Dictionary<ECurrencyType, long> budget)
 		{
 			var remaining = need.ToBuy;
-			var sorted = offers.OrderBy(UnitPrice).ThenBy(offer => offer.IntId).ToList();
+			var sorted = offers.OrderBy(offer => Array.IndexOf(Currencies, offer.MoneyType)).ThenBy(UnitPrice).ThenBy(offer => offer.IntId).ToList();
 			foreach (var offer in sorted)
 			{
 				if (remaining <= 0)
@@ -374,7 +390,7 @@ namespace CustomRpTweaks.Client
 				var supply = offer.CurrentItemCount;
 				if (offer.SellInOnePiece)
 				{
-					if (supply <= remaining)
+					if (supply <= remaining && Pay(budget, offer, supply))
 					{
 						Take(need, offer, supply);
 						remaining -= supply;
@@ -383,16 +399,24 @@ namespace CustomRpTweaks.Client
 				else
 				{
 					var count = Math.Min(supply, remaining);
-					Take(need, offer, count);
-					remaining -= count;
+					if (budget != null)
+					{
+						count = (int)Math.Min(count, budget[offer.MoneyType] / Math.Max(1, (long)Math.Ceiling(offer.Requirements[0].PreciseCount)));
+					}
+
+					if (count > 0 && Pay(budget, offer, count))
+					{
+						Take(need, offer, count);
+						remaining -= count;
+					}
 				}
 			}
 
 			if (remaining > 0)
 			{
 				var pack = sorted.Where(offer => offer.SellInOnePiece && offer.CurrentItemCount >= remaining && need.Picks.All(pick => pick.Offer != offer))
-					.OrderBy(offer => offer.Requirements[0].PreciseCount)
-					.FirstOrDefault();
+					.OrderBy(offer => Array.IndexOf(Currencies, offer.MoneyType)).ThenBy(offer => offer.Requirements[0].PreciseCount)
+					.FirstOrDefault(offer => Pay(budget, offer, offer.CurrentItemCount));
 				if (pack != null)
 				{
 					Take(need, pack, pack.CurrentItemCount);
@@ -405,13 +429,30 @@ namespace CustomRpTweaks.Client
 			return remaining == 0;
 		}
 
-		// The offers for one item that can be bought right now: other players' offers for roubles, found by the game's own search
+		// Takes the price of count pieces of the offer out of the budget; false (nothing taken) when it isn't there
+		private static bool Pay(Dictionary<ECurrencyType, long> budget, Offer offer, int count)
+		{
+			if (budget == null)
+			{
+				return true;
+			}
+
+			var price = offer.SellInOnePiece ? offer.Requirements[0].IntCount : (long)Math.Ceiling(offer.Requirements[0].PreciseCount * count);
+			if (budget[offer.MoneyType] < price)
+			{
+				return false;
+			}
+
+			budget[offer.MoneyType] -= price;
+			return true;
+		}
+
+		// The offers for one item that can be bought right now: other players' offers for roubles, dollars or euro, found by the game's own search
 		private static async Task<List<Offer>> FindOffers(RagFair ragfair, Profile profile, IExchangeRequirement requirement)
 		{
 			var found = new List<Offer>();
 			var session = ragfair._tradingSession;
 			var delay = Singleton<GlobalConfiguration>.Instance.RagFair.delaySinceOfferAdd;
-			var rouble = CurrencyUtil.GetCurrencyId(ECurrencyType.RUB);
 			var me = profile.Id.ToString();
 
 			for (var page = 0; page < MaxPages; page++)
@@ -426,7 +467,7 @@ namespace CustomRpTweaks.Client
 				foreach (var candidate in response.Value.offers)
 				{
 					if (candidate != null && !candidate.NotAvailable && candidate.CanBeBought && !candidate.Locked && candidate.CurrentItemCount > 0 && candidate.OnlyMoney
-						&& candidate.Requirements[0].TemplateId == rouble && candidate.MemberType != EMemberCategory.Trader && candidate.User != null && candidate.User.Id.ToString() != me
+						&& Array.IndexOf(Currencies, candidate.MoneyType) >= 0 && candidate.MemberType != EMemberCategory.Trader && candidate.User != null && candidate.User.Id.ToString() != me
 						&& (DateTimeExtensions.UtcNow - candidate.StartTime).TotalSeconds >= delay && candidate.Item != null && candidate.Item.StringTemplateId == requirement.TemplateId)
 					{
 						found.Add(candidate);
