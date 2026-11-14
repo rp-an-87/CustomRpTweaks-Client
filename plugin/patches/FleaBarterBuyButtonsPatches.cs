@@ -52,7 +52,18 @@ namespace CustomRpTweaks.Client
 		{
 			var click = button.GetComponent<Button>();
 			click.onClick.RemoveAllListeners();
-			click.onClick.AddListener(() => FleaBarterBuy.Start(ragfair, offer));
+			click.onClick.AddListener(() =>
+			{
+				// What the tooltip says is about to be out of date
+				QuoteHover.ClearCache();
+				var tooltip = ItemUiContext.Instance == null ? null : ItemUiContext.Instance.Tooltip;
+				if (tooltip != null)
+				{
+					tooltip.Close();
+				}
+
+				FleaBarterBuy.Start(ragfair, offer);
+			});
 			var hover = button.GetComponent<QuoteHover>();
 			hover.Ragfair = ragfair;
 			hover.Offer = offer;
@@ -158,10 +169,12 @@ namespace CustomRpTweaks.Client
 		}
 	}
 
-	// Hovering a button: the tooltip says what it would cost (worked out from the offers as they are now, kept for 20 seconds)
+	// Hovering a button: the tooltip says what it would cost (worked out from the offers as they are now, kept for 10 seconds while nothing it depends on changes)
 	internal class QuoteHover : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
 	{
 		private static readonly Dictionary<string, KeyValuePair<float, string>> Cache = new Dictionary<string, KeyValuePair<float, string>>();
+
+		internal static void ClearCache() => Cache.Clear();
 
 		public RagFair Ragfair;
 		public Offer Offer;
@@ -176,8 +189,8 @@ namespace CustomRpTweaks.Client
 				return;
 			}
 
-			var key = Offer.Id + ":" + Plugin.FleaBarterBuyMode.Value;
-			if (Cache.TryGetValue(key, out var cached) && Time.realtimeSinceStartup - cached.Key < 20f)
+			var key = Offer.Id + ":" + Plugin.FleaBarterBuyMode.Value + ":" + FleaBarterBuy.StateKey(Ragfair, Offer);
+			if (Cache.TryGetValue(key, out var cached) && Time.realtimeSinceStartup - cached.Key < 10f)
 			{
 				tooltip.Show(cached.Value, null, 0f, 420f);
 				return;

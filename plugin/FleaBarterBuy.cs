@@ -171,6 +171,7 @@ namespace CustomRpTweaks.Client
 			finally
 			{
 				_running = false;
+				QuoteHover.ClearCache();
 			}
 		}
 
@@ -265,6 +266,27 @@ namespace CustomRpTweaks.Client
 		}
 
 		private static bool IsOutOfStockNow(this Offer offer) => offer.TotalItemCount <= 0;
+
+		// What a quote depends on besides the offers: what the barter asks for now (the server may raise it) and what you hold. A quote is
+		// only reused while this stays the same.
+		internal static string StateKey(RagFair ragfair, Offer offer)
+		{
+			var stash = ragfair._tradingSession.Profile.Inventory.Stash.GetAllItemsFromCollection().Where(item => item != null).ToList();
+			var key = new StringBuilder();
+			foreach (var requirement in offer.Requirements)
+			{
+				var held = stash.Where(item => item.StringTemplateId == requirement.TemplateId).ToList();
+				key.Append(requirement.TemplateId).Append('=').Append(Required(offer, requirement)).Append('/').Append(held.Sum(item => item.StackObjectsCount))
+					.Append('/').Append(held.Where(item => item.MarkedAsSpawnedInSession).Sum(item => item.StackObjectsCount)).Append(';');
+			}
+
+			foreach (var amount in Wallet(stash))
+			{
+				key.Append(amount.Value).Append(',');
+			}
+
+			return key.ToString();
+		}
 
 		private const string Yellow = "#F2C94C", Green = "#6FCF6F", Blue = "#5AA9F2", Red = "#E0554A", Grey = "#9A9A9A";
 
