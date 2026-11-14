@@ -1,0 +1,465 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Reflection;
+using System.Threading.Tasks;
+using Comfort.Common;
+using EFT;
+using EFT.Communications;
+using EFT.InventoryLogic;
+using EFT.UI;
+using EFT.UI.Ragfair;
+using SPT.Reflection.Patching;
+
+namespace CustomRpTweaks.Client
+{
+	// "Quick buy missing" / "Quick buy all" / "Barter cost" in the item menu of a flea market barter offer (the buttons beside the offer:
+	// Inspect, Filter by item, ...). For every item the barter asks for, the cheapest player offers for roubles are bought (the game's own
+	// search, sorted by price, and the game's own purchase request), then the barter itself is bought with those items. Everything is
+	// worked out first and nothing is bought unless every item can be had and the roubles are there.
+	internal static class FleaBarterBuy
+	{
+		internal const string MissingKey = "Quick buy missing";
+		internal const string AllKey = "Quick buy all";
+		internal const string QuoteKey = "Barter cost";
+
+		private enum Mode { Missing, All, Quote }
+
+		// What one requirement of the barter needs: how many to buy, and the offers they come from
+		private class Need
+		{
+			public IExchangeRequirement Requirement;
+			public string Name;
+			public int Required;
+			public int ToBuy;
+			public int Shortfall;
+			public int Spare;
+			public bool CannotBuy;
+			public readonly List<Pick> Picks = new List<Pick>();
+			public long Cost => Picks.Sum(pick => pick.Cost);
+			public int Bought => Picks.Sum(pick => pick.Count);
+		}
+
+		private class Pick
+		{
+			public Offer Offer;
+			public int Count;
+			public long Cost;
+		}
+
+		private class Plan
+		{
+			public readonly List<Need> Needs = new List<Need>();
+			public readonly List<string> Problems = new List<string>();
+			public long Total => Needs.Sum(need => need.Cost);
+			public int Bought => Needs.Sum(need => need.Bought);
+		}
+
+		private const int PageSize = 50;
+		private const int MaxPages = 6;
+
+		private static bool _running;
+
+		private static void Notify(string message) => NotificationManager.DisplayMessageNotification(message);
+
+		private static string Roubles(long amount) => amount.ToString("N0", CultureInfo.InvariantCulture).Replace(",", " ") + " roubles";
+
+		private static string NameOf(Item item) => item == null ? "?" : item.ShortName.Localized(null);
+
+		// Called when the game makes the interactions of an item: a flea market barter gets our entries
+		internal static void Add(ItemContext itemContext, ContextInteractions<EItemInfoButton> interactions)
+		{
+			if (!Plugin.FleaBarterBuyMenu.Value || HandIn.AddDynamic == null || interactions == null || itemContext?.Item == null)
+			{
+				return;
+			}
+
+			var ragfairInteractions = interactions as RagfairContextInteractions;
+			var ragfair = ragfairInteractions?._ragfair;
+			if (ragfair == null)
+			{
+				return;
+			}
+
+			var offer = FindOffer(ragfair, itemContext.Item);
+			interactions.RemoveDynamicInteraction(MissingKey);
+			interactions.RemoveDynamicInteraction(AllKey);
+			interactions.RemoveDynamicInteraction(QuoteKey);
+			if (offer == null || offer.NotAvailable || offer.OnlyMoney || offer.Requirements == null || offer.Requirements.Length == 0 || ragfair.Disabled)
+			{
+				return;
+			}
+
+			HandIn.AddDynamic.Invoke(interactions, new object[] { MissingKey, MissingKey, (Action)(() => Start(ragfair, offer, Mode.Missing)), null });
+			HandIn.AddDynamic.Invoke(interactions, new object[] { AllKey, AllKey, (Action)(() => Start(ragfair, offer, Mode.All)), null });
+			HandIn.AddDynamic.Invoke(interactions, new object[] { QuoteKey, QuoteKey, (Action)(() => Start(ragfair, offer, Mode.Quote)), null });
+		}
+
+		private static Offer FindOffer(RagFair ragfair, Item item)
+		{
+			foreach (var offer in ragfair.Offers)
+			{
+				if (offer != null && (offer.Item == item || (offer.Item != null && offer.Item.Id == item.Id)))
+				{
+					return offer;
+				}
+			}
+
+			return null;
+		}
+
+		private static async void Start(RagFair ragfair, Offer offer, Mode mode)
+		{
+			if (_running)
+			{
+				Notify("Quick buy: still working on the last one.");
+				return;
+			}
+
+			_running = true;
+			try
+			{
+				await Run(ragfair, offer, mode);
+			}
+			catch (Exception e)
+			{
+				Plugin.Log.LogError($"Quick buy failed: {e}");
+				Notify("Quick buy failed: " + e.Message + " (see the BepInEx log)");
+			}
+			finally
+			{
+				_running = false;
+			}
+		}
+
+		private static async Task Run(RagFair ragfair, Offer offer, Mode mode)
+		{
+			var session = ragfair._tradingSession;
+			var profile = session.Profile;
+			var inventory = profile.Inventory;
+			var search = new Dictionary<string, List<Offer>>();
+
+			if (!offer.CanBeBought || offer.IsOutOfStockNow())
+			{
+				Notify("Quick buy: this offer can't be bought right now.");
+				return;
+			}
+
+			if (mode == Mode.Quote)
+			{
+				var missing = await MakePlan(ragfair, profile, offer, Mode.Missing, search);
+				var all = await MakePlan(ragfair, profile, offer, Mode.All, search);
+				Notify($"Barter cost: missing {Describe(missing)}; all {Describe(all)}.");
+				return;
+			}
+
+			var plan = await MakePlan(ragfair, profile, offer, mode, search);
+			if (plan.Problems.Count > 0)
+			{
+				Notify("Quick buy: nothing bought. " + string.Join(" ", plan.Problems));
+				return;
+			}
+
+			var stash = inventory.Stash.GetAllItemsFromCollection().ToList();
+			if (plan.Total > 0)
+			{
+				var have = RoublesIn(stash);
+				if (have < plan.Total)
+				{
+					Notify($"Quick buy: nothing bought. It costs {Roubles(plan.Total)}, you have {Roubles(have)}.");
+					return;
+				}
+
+				var goods = new Dictionary<IExchangeable, int>();
+				foreach (var pick in plan.Needs.SelectMany(need => need.Picks))
+				{
+					goods[pick.Offer] = pick.Count;
+				}
+
+				var references = HandoverExtensions.RecalculateReferences(stash, goods);
+				var commodities = new CommoditiesToPurchase();
+				foreach (var pair in goods)
+				{
+					var money = references[pair.Key].ItemsToHandover
+						.Where(entry => entry.Value > 0 && CurrencyUtil.IsCurrencyId(entry.Key.TemplateId))
+						.Select(entry => new ItemReference { Id = entry.Key.Id, TemplateId = entry.Key.TemplateId, ExistingCount = entry.Value })
+						.ToList();
+					commodities.Add(new CommodityToPurchase(pair.Key, pair.Key.SellInOnePiece ? pair.Key.CurrentItemCount : pair.Value, money));
+				}
+
+				var result = await ragfair.Purchase(commodities);
+				if (!result.Succeed)
+				{
+					Notify($"Quick buy: the flea market refused the purchase (code {result.ErrorCode}), the offers have probably changed. Try again.");
+					return;
+				}
+			}
+
+			var spare = plan.Needs.Sum(need => need.Spare);
+			var summary = plan.Bought == 0 ? "nothing needed buying" : $"bought {plan.Bought} item{(plan.Bought == 1 ? "" : "s")} for {Roubles(plan.Total)}" + (spare > 0 ? $" ({spare} spare in a pack)" : "");
+
+			if (!Plugin.FleaBarterBuyComplete.Value)
+			{
+				Notify("Quick buy: " + summary + ".");
+				return;
+			}
+
+			// The items should be in the stash as the purchase returns; give the game a moment if not
+			List<ItemReference> handover = null;
+			for (var attempt = 0; attempt < 10; attempt++)
+			{
+				stash = inventory.Stash.GetAllItemsFromCollection().ToList();
+				handover = Handover(stash, offer);
+				if (handover != null)
+				{
+					break;
+				}
+
+				await Task.Delay(200);
+			}
+
+			if (handover == null)
+			{
+				Notify("Quick buy: " + summary + ", but the items are not all in your stash, so the barter was not bought.");
+				return;
+			}
+
+			var screen = UnityEngine.Object.FindObjectOfType<RagfairScreen>();
+			if (screen == null)
+			{
+				Notify("Quick buy: " + summary + ", but the flea market screen is gone, so the barter was not bought.");
+				return;
+			}
+
+			var barter = new CommoditiesToPurchase();
+			barter.Add(new CommodityToPurchase(offer, offer.SellInOnePiece ? offer.Quantity : 1, handover));
+			Notify("Quick buy: " + summary + ", buying the barter.");
+			await screen.PerformPurchase(barter);
+		}
+
+		private static bool IsOutOfStockNow(this Offer offer) => offer.TotalItemCount <= 0;
+
+		private static string Describe(Plan plan)
+		{
+			if (plan.Problems.Count > 0)
+			{
+				return string.Join(" ", plan.Problems);
+			}
+
+			if (plan.Bought == 0)
+			{
+				return "nothing to buy";
+			}
+
+			return $"{Roubles(plan.Total)} ({plan.Bought} item{(plan.Bought == 1 ? "" : "s")}: " + string.Join(", ", plan.Needs.Where(need => need.Bought > 0).Select(need => $"{need.Bought}x {need.Name}")) + ")";
+		}
+
+		private static long RoublesIn(IEnumerable<Item> items)
+		{
+			var rouble = CurrencyUtil.GetCurrencyId(ECurrencyType.RUB);
+			return items.OfType<Money>().Where(money => money.TemplateId == rouble && money.PinLockState != EItemPinLockState.Locked).Sum(money => (long)money.StackObjectsCount);
+		}
+
+		private static int Required(Offer offer, IExchangeRequirement requirement) =>
+			offer.SellInOnePiece ? requirement.IntCount : (int)Math.Ceiling(requirement.PreciseCount);
+
+		// Items of the stash that can go into the barter, the way the game's own hand-over window picks them: not found in raid first
+		// (so a found-in-raid item is only used when nothing else is left), then the smaller stacks
+		private static IEnumerable<Item> Candidates(IEnumerable<Item> stash, IExchangeRequirement requirement, bool includeFir) =>
+			stash.Where(item => item != null && item.StringTemplateId == requirement.TemplateId && HandoverExtensions.AvailableToHandover(item, requirement) && (includeFir || !item.MarkedAsSpawnedInSession))
+				.OrderBy(item => item.MarkedAsSpawnedInSession)
+				.ThenBy(item => item.StackObjectsCount);
+
+		// The references of the items to hand over for the barter, or null when the stash doesn't hold everything it asks for
+		private static List<ItemReference> Handover(List<Item> stash, Offer offer)
+		{
+			var references = new List<ItemReference>();
+			foreach (var requirement in offer.Requirements)
+			{
+				var remaining = Required(offer, requirement);
+				foreach (var item in Candidates(stash, requirement, true))
+				{
+					if (remaining <= 0)
+					{
+						break;
+					}
+
+					var take = Math.Min(remaining, item.StackObjectsCount);
+					references.Add(new ItemReference { Id = item.Id, TemplateId = item.TemplateId, ExistingCount = take });
+					remaining -= take;
+				}
+
+				if (remaining > 0)
+				{
+					return null;
+				}
+			}
+
+			return references;
+		}
+
+		private static async Task<Plan> MakePlan(RagFair ragfair, Profile profile, Offer offer, Mode mode, Dictionary<string, List<Offer>> search)
+		{
+			var plan = new Plan();
+			var stash = profile.Inventory.Stash.GetAllItemsFromCollection().ToList();
+
+			foreach (var requirement in offer.Requirements)
+			{
+				var need = new Need { Requirement = requirement, Name = NameOf(requirement.Item), Required = Required(offer, requirement) };
+				plan.Needs.Add(need);
+
+				var owned = Candidates(stash, requirement, mode == Mode.All || !Plugin.FleaBarterBuyFirAsMissing.Value).Sum(item => item.StackObjectsCount);
+				need.ToBuy = mode == Mode.All ? need.Required : Math.Max(0, need.Required - owned);
+				if (need.ToBuy <= 0)
+				{
+					continue;
+				}
+
+				// Money and dog tags can't be bought on the flea market
+				if (CurrencyUtil.IsCurrencyId(requirement.TemplateId) || requirement.Item.GetItemComponent<DogtagComponent>() != null)
+				{
+					need.CannotBuy = true;
+					if (mode == Mode.All)
+					{
+						// Nothing to buy: what you hold is used
+						need.ToBuy = 0;
+						need.CannotBuy = Candidates(stash, requirement, true).Sum(item => item.StackObjectsCount) < need.Required;
+					}
+
+					if (need.CannotBuy)
+					{
+						plan.Problems.Add($"{need.Name} can't be bought on the flea market and you don't have {need.Required}.");
+					}
+
+					continue;
+				}
+
+				if (!search.TryGetValue(requirement.TemplateId, out var offers))
+				{
+					offers = await FindOffers(ragfair, profile, requirement);
+					search[requirement.TemplateId] = offers;
+				}
+
+				if (!Allocate(need, offers))
+				{
+					plan.Problems.Add($"Only {need.ToBuy - need.Shortfall} of {need.ToBuy} {need.Name} for sale for roubles.");
+				}
+			}
+
+			return plan;
+		}
+
+		private static double UnitPrice(Offer offer) => offer.SellInOnePiece ? offer.Requirements[0].PreciseCount / Math.Max(1, offer.Quantity) : offer.Requirements[0].PreciseCount;
+
+		private static void Take(Need need, Offer offer, int count)
+		{
+			var cost = offer.SellInOnePiece ? offer.Requirements[0].IntCount : (long)Math.Ceiling(offer.Requirements[0].PreciseCount * count);
+			need.Picks.Add(new Pick { Offer = offer, Count = count, Cost = cost });
+		}
+
+		// The cheapest offers first, per piece. A pack sold in one piece is only taken whole, and only when it fits in what is still needed;
+		// if packs are all that is left, the cheapest pack that covers it is bought whole (the rest of it is spare).
+		private static bool Allocate(Need need, List<Offer> offers)
+		{
+			var remaining = need.ToBuy;
+			var sorted = offers.OrderBy(UnitPrice).ThenBy(offer => offer.IntId).ToList();
+			foreach (var offer in sorted)
+			{
+				if (remaining <= 0)
+				{
+					break;
+				}
+
+				var supply = offer.CurrentItemCount;
+				if (offer.SellInOnePiece)
+				{
+					if (supply <= remaining)
+					{
+						Take(need, offer, supply);
+						remaining -= supply;
+					}
+				}
+				else
+				{
+					var count = Math.Min(supply, remaining);
+					Take(need, offer, count);
+					remaining -= count;
+				}
+			}
+
+			if (remaining > 0)
+			{
+				var pack = sorted.Where(offer => offer.SellInOnePiece && offer.CurrentItemCount >= remaining && need.Picks.All(pick => pick.Offer != offer))
+					.OrderBy(offer => offer.Requirements[0].PreciseCount)
+					.FirstOrDefault();
+				if (pack != null)
+				{
+					Take(need, pack, pack.CurrentItemCount);
+					need.Spare = pack.CurrentItemCount - remaining;
+					remaining = 0;
+				}
+			}
+
+			need.Shortfall = remaining;
+			return remaining == 0;
+		}
+
+		// The offers for one item that can be bought right now: other players' offers for roubles, found by the game's own search
+		private static async Task<List<Offer>> FindOffers(RagFair ragfair, Profile profile, IExchangeRequirement requirement)
+		{
+			var found = new List<Offer>();
+			var session = ragfair._tradingSession;
+			var delay = Singleton<GlobalConfiguration>.Instance.RagFair.delaySinceOfferAdd;
+			var rouble = CurrencyUtil.GetCurrencyId(ECurrencyType.RUB);
+			var me = profile.Id.ToString();
+
+			for (var page = 0; page < MaxPages; page++)
+			{
+				var response = await session.GetOffers(page, PageSize, (int)ESortType.Price, false, 0, 0, 0, 0, 0, 0, 100, false, true, (int)EOfferOwnerType.PlayerOwnerType,
+					true, requirement.TemplateId, string.Empty, string.Empty, new Dictionary<string, int>(), 0, false);
+				if (response.Failed || response.Value == null || response.Value.offers == null)
+				{
+					break;
+				}
+
+				foreach (var candidate in response.Value.offers)
+				{
+					if (candidate != null && !candidate.NotAvailable && candidate.CanBeBought && !candidate.Locked && candidate.CurrentItemCount > 0 && candidate.OnlyMoney
+						&& candidate.Requirements[0].TemplateId == rouble && candidate.MemberType != EMemberCategory.Trader && candidate.User != null && candidate.User.Id.ToString() != me
+						&& (DateTimeExtensions.UtcNow - candidate.StartTime).TotalSeconds >= delay && candidate.Item != null && candidate.Item.StringTemplateId == requirement.TemplateId)
+					{
+						found.Add(candidate);
+					}
+				}
+
+				if (response.Value.offers.Length == 0 || (page + 1) * PageSize >= response.Value.offersCount)
+				{
+					break;
+				}
+			}
+
+			return found;
+		}
+	}
+
+	// The item menu of a flea market offer is built here (for the buttons beside the offer); our entries are added to it
+	internal class FleaBarterBuyMenuPatch : ModulePatch
+	{
+		protected override MethodBase GetTargetMethod() => typeof(ItemUiContext).GetMethod(nameof(ItemUiContext.GetItemContextInteractions), BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly);
+
+		[PatchPostfix]
+		private static void Postfix(ItemContext itemContext, ContextInteractions<EItemInfoButton> __result)
+		{
+			// Never let a problem with our entries break the menu
+			try
+			{
+				FleaBarterBuy.Add(itemContext, __result);
+			}
+			catch (Exception e)
+			{
+				Plugin.Log.LogError($"Quick buy menu entries: {e}");
+			}
+		}
+	}
+}
