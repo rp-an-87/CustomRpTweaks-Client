@@ -365,8 +365,8 @@ namespace CustomRpTweaks.Client
 				var text = $"{need.Name} <color={(counted >= need.Required ? Green : Yellow)}>{counted}/{need.Required}</color>";
 				if (need.ToBuy > 0 && need.FirHeld > 0 && src.Buying == Mode.Missing && src.FirAsMissing && src.Consumed(need.Requirement) && !src.NeedsFir(need.Requirement))
 				{
-					var covers = need.Shortfall > 0 && need.FirHeld >= need.Shortfall ? "; they would cover the gap" : "";
-					text += $" (+{need.FirHeld} found-in-raid, not counted{covers})";
+					var covers = need.Shortfall > 0 && need.FirHeld >= need.Shortfall ? "; would cover the gap" : "";
+					text += $" ({need.FirHeld} FiR, ignored{covers})";
 				}
 
 				have.Add(text);
