@@ -353,10 +353,11 @@ namespace CustomRpTweaks.Client
 		{
 			if (src.Buying == Mode.Missing && src.FirAsMissing)
 			{
-				foreach (var need in plan.Needs.Where(need => need.FirHeld > 0 && src.Consumed(need.Requirement) && !src.NeedsFir(need.Requirement)))
+				// Only where it matters: for an item that is being bought (or can't be), not one the non-FiR items you hold already cover
+				foreach (var need in plan.Needs.Where(need => need.ToBuy > 0 && need.FirHeld > 0 && src.Consumed(need.Requirement) && !src.NeedsFir(need.Requirement)))
 				{
 					var covers = need.Shortfall > 0 && need.FirHeld >= need.Shortfall ? " They would cover what is missing." : "";
-					yield return Note($"You have {need.FirHeld} found-in-raid {need.Name}, but those won't be used.{covers}");
+					yield return Note($"Your {need.FirHeld} found-in-raid {need.Name} are not counted.{covers}");
 				}
 			}
 
