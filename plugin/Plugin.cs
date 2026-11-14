@@ -179,7 +179,7 @@ namespace CustomRpTweaks.Client
 				"On: the found-in-raid items you hold are not counted as items you have, so Quick buy missing buys the whole requirement and the barter takes the bought items (the game hands in items that are not found in raid first). Off: they count as held.");
 			FleaBarterBuyComplete = Config.Bind("19. Flea market", "4. Quick buy also buys the barter", true,
 				"On: once the items are bought, the barter offer itself is bought with them. Off: only the items are bought, you complete the barter yourself.");
-			FleaBarterBuyButtons = Config.Bind("19. Flea market", "5. Quick buy buttons under the offer's price", true,
+			FleaBarterBuyButtons = Config.Bind("19. Flea market", "5. Quick buy buttons under the barter price", true,
 				"Two small buttons (Buy missing, Buy all) under the price of a flea market barter offer, the same as the menu entries. Hover one: the tooltip shows what it would cost from the current offers, and whether you hold the money. Takes effect the next time the offers are drawn.");
 			new FleaBarterBuyMenuPatch().Enable();
 			new FleaBarterBuyButtonsPatch().Enable();
