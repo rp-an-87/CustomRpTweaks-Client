@@ -351,6 +351,13 @@ namespace CustomRpTweaks.Client
 		// Notes under the tooltip: found-in-raid items that are held but won't be used, and what the flea market can't supply
 		private static IEnumerable<string> Notes(Plan plan, Source src)
 		{
+			// What it isn't buying, and why: you hold enough (counted the way the mode counts, found-in-raid items or not)
+			var enough = plan.Needs.Where(need => need.ToBuy == 0 && !need.CannotBuy).ToList();
+			if (enough.Count > 0)
+			{
+				yield return Note("<b>You already have:</b> " + string.Join(", ", enough.Select(need => $"{need.Name} {(need.Owned >= need.Required ? need.Owned : need.Held)}/{need.Required}")));
+			}
+
 			if (src.Buying == Mode.Missing && src.FirAsMissing)
 			{
 				// Only where it matters: for an item that is being bought (or can't be), not one the non-FiR items you hold already cover
