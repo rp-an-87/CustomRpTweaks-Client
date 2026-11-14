@@ -90,6 +90,7 @@ namespace CustomRpTweaks.Client
 			public int Owned;
 			public int FirHeld;
 			public int Held;
+			public int Busy;
 			public bool CannotBuy;
 			public readonly List<Pick> Picks = new List<Pick>();
 			public int Bought => Picks.Sum(pick => pick.Count);
@@ -363,10 +364,20 @@ namespace CustomRpTweaks.Client
 
 				var counted = need.Owned >= need.Required ? need.Owned : (need.ToBuy == 0 || need.CannotBuy ? need.Held : need.Owned);
 				var text = $"{need.Name} <color={(counted >= need.Required ? Green : Yellow)}>{counted}/{need.Required}</color>";
+				var remarks = new List<string>();
 				if (need.FirHeld > 0 && src.Buying == Mode.Missing && src.FirAsMissing && src.Consumed(need.Requirement) && !src.NeedsFir(need.Requirement))
 				{
-					var covers = need.Shortfall > 0 && need.FirHeld >= need.Shortfall ? "; would cover the gap" : "";
-					text += $" ({need.FirHeld} FiR, ignored{covers})";
+					remarks.Add($"+{need.FirHeld} FiR" + (need.Shortfall > 0 && need.FirHeld >= need.Shortfall ? ", would cover the gap" : ""));
+				}
+
+				if (need.Busy > 0)
+				{
+					remarks.Add($"{need.Busy} not empty");
+				}
+
+				if (remarks.Count > 0)
+				{
+					text += " (" + string.Join(", ", remarks) + ")";
 				}
 
 				have.Add(text);
@@ -495,6 +506,8 @@ namespace CustomRpTweaks.Client
 				var consumed = src.Consumed(requirement);
 				var needsFir = src.NeedsFir(requirement);
 				need.Held = Candidates(src, stash, requirement, true).Sum(item => item.StackObjectsCount);
+				// Containers of this kind with something in them: held, but of no use here
+				need.Busy = stash.Where(item => item != null && item.StringTemplateId == requirement.TemplateId && item is CompoundItem compound && !compound.IsEmpty).Sum(item => item.StackObjectsCount);
 				need.FirHeld = Candidates(src, stash, requirement, true).Where(item => item.MarkedAsSpawnedInSession).Sum(item => item.StackObjectsCount);
 				var owned = Candidates(src, stash, requirement, mode == Mode.All || !src.FirAsMissing || !consumed || needsFir).Sum(item => item.StackObjectsCount);
 				need.Owned = owned;
