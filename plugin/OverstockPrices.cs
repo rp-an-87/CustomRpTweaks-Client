@@ -21,6 +21,9 @@ namespace CustomRpTweaks.Client
 		private static Dictionary<string, Dictionary<string, double>> _seed = new Dictionary<string, Dictionary<string, double>>();
 		// lowest price seen per offer and screen ("t" trader grid, "f" flea), as each shows the price in its own way
 		private static readonly Dictionary<string, int> _baseline = new Dictionary<string, int>();
+		// how much higher than its base an offer was last seen at, on any screen (1 = not raised): a screen that has never seen the offer
+		// cheaper learns the base from this, e.g. the trader screen for an offer that became dearer through a flea market purchase
+		private static readonly Dictionary<string, double> _ratio = new Dictionary<string, double>();
 		private static bool _seeded;
 		private static bool _serverOff;
 		private static int _failures;
@@ -37,13 +40,18 @@ namespace CustomRpTweaks.Client
 				return false;
 			}
 
-			string key = screen + "|" + traderId + "|" + offerId;
+			string offerKey = traderId + "|" + offerId;
+			string key = screen + "|" + offerKey;
 			if (!_baseline.TryGetValue(key, out int lowest))
 			{
 				lowest = price;
 				if (_seed.TryGetValue(traderId, out var offers) && offers.TryGetValue(seedOfferId ?? offerId, out double multiplier) && multiplier > 1)
 				{
 					lowest = (int)Math.Round(price / multiplier);
+				}
+				else if (_ratio.TryGetValue(offerKey, out double seen) && seen > 1)
+				{
+					lowest = (int)Math.Round(price / seen);
 				}
 			}
 
@@ -54,7 +62,9 @@ namespace CustomRpTweaks.Client
 
 			_baseline[key] = lowest;
 			basePrice = lowest;
-			return price > lowest;
+			bool raised = price > lowest;
+			_ratio[offerKey] = raised ? (double)price / lowest : 1d;
+			return raised;
 		}
 
 		// Wraps a task the game awaits for trader offers or flea results, so the one request is made once the response is in
@@ -121,6 +131,7 @@ namespace CustomRpTweaks.Client
 			_serverOff = true;
 			_seed = new Dictionary<string, Dictionary<string, double>>();
 			_baseline.Clear();
+			_ratio.Clear();
 			Plugin.Verbose("Price indicator off until the game restarts: " + reason);
 		}
 	}
