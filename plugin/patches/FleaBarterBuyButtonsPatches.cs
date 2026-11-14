@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Threading.Tasks;
 using EFT.UI;
 using EFT.UI.Ragfair;
 using SPT.Reflection.Patching;
@@ -65,8 +66,8 @@ namespace CustomRpTweaks.Client
 				FleaBarterBuy.Start(ragfair, offer);
 			});
 			var hover = button.GetComponent<QuoteHover>();
-			hover.Ragfair = ragfair;
-			hover.Offer = offer;
+			hover.CacheKey = () => offer.Id + ":" + Plugin.FleaBarterBuyMode.Value + ":" + FleaBarterBuy.StateKey(FleaBarterBuy.BarterSource(ragfair, offer));
+			hover.Quote = () => FleaBarterBuy.Quote(ragfair, FleaBarterBuy.BarterSource(ragfair, offer));
 			var caption = button.GetComponentInChildren<TextMeshProUGUI>(true);
 			if (caption != null)
 			{
@@ -176,20 +177,21 @@ namespace CustomRpTweaks.Client
 
 		internal static void ClearCache() => Cache.Clear();
 
-		public RagFair Ragfair;
-		public Offer Offer;
+		// The key a quote is kept under (changes when what it depends on does) and how to work one out
+		public Func<string> CacheKey;
+		public Func<Task<string>> Quote;
 		private int _hover;
 
 		public async void OnPointerEnter(PointerEventData eventData)
 		{
 			var token = ++_hover;
 			var tooltip = ItemUiContext.Instance == null ? null : ItemUiContext.Instance.Tooltip;
-			if (tooltip == null || Offer == null)
+			if (tooltip == null || Quote == null || CacheKey == null)
 			{
 				return;
 			}
 
-			var key = Offer.Id + ":" + Plugin.FleaBarterBuyMode.Value + ":" + FleaBarterBuy.StateKey(Ragfair, Offer);
+			var key = CacheKey();
 			if (Cache.TryGetValue(key, out var cached) && Time.realtimeSinceStartup - cached.Key < 10f)
 			{
 				tooltip.Show(cached.Value, null, 0f, 420f);
@@ -200,7 +202,7 @@ namespace CustomRpTweaks.Client
 			string text;
 			try
 			{
-				text = await FleaBarterBuy.Quote(Ragfair, Offer);
+				text = await Quote();
 				Cache[key] = new KeyValuePair<float, string>(Time.realtimeSinceStartup, text);
 			}
 			catch (Exception e)

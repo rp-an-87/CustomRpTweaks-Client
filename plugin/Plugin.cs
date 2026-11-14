@@ -41,7 +41,9 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<bool> LogThrottleDecisions;
 
 		internal static ConfigEntry<int> SpecialSlotsPerRow;
-		internal static ConfigEntry<bool> CraftFirHandling;
+		internal static ConfigEntry<bool> HideoutQuickBuy;
+		internal static ConfigEntry<QuickBuyMode> HideoutBuyMode;
+		internal static ConfigEntry<bool> HideoutBuyTools;
 		internal static ConfigEntry<bool> KeepTopRowsFree;
 		internal static ConfigEntry<int> TopRowsToKeepFree;
 		internal static ConfigEntry<bool> KeepSpeedWhileZooming;
@@ -153,14 +155,15 @@ namespace CustomRpTweaks.Client
 			TopRowsToKeepFree = Config.Bind("4. Stash sort", "2. Rows to keep free", 5,
 				new ConfigDescription("How many rows, counting from the top of the stash, to keep free when sorting.", new AcceptableValueRange<int>(1, 50)));
 
-			CraftFirHandling = Config.Bind("5. Hideout", "1. Show FiR items in crafts and buy replacements", false,
-				"Craft requirements read 'total (FiR) / required' so you can see how many FiR items a craft would use, and the buy button purchases replacements for those (plus anything missing). Crafts can still use FiR items. Hideout upgrades and tools are not affected.");
-
-			new HideoutCraftFirPatches.RequirementViewPatch().Enable();
-			new HideoutCraftFirPatches.BuyMaterialsPatch().Enable();
-			new HideoutCraftFirPatches.StartButtonPatch().Enable();
-			new HideoutCraftFirPatches.BuyTooltipPatch().Enable();
-
+			HideoutQuickBuy = Config.Bind("5. Hideout", "1. Buy craft materials with the buy button", true,
+				"The flea market buy button of a craft buys everything the craft needs, the cheapest offers first (other players' offers: roubles first, then US dollar and euro offers only for what the roubles can't cover and only with the money you hold; a pack sold in one piece only whole). Hover the button: the tooltip shows what it would buy and cost, and whether it can be done at all. Nothing is bought unless every item can be had and you hold the money. Money, dog tags and found-in-raid requirements are not for sale: they are used from the stash. Tools (the wrench-marked requirements) follow the setting below. There is no confirmation: the click buys, starting the craft is still up to you. Off: the game's own button (a flea market search).");
+			HideoutBuyMode = Config.Bind("5. Hideout", "2. Craft buy mode", QuickBuyMode.BuyMissingNoFir,
+				"What the buy button buys. Buy all: everything the craft asks for, whatever you hold. Buy missing: only what you don't hold. Buy missing, found-in-raid items don't count: like Buy missing, but your found-in-raid items are not counted as held, so they are kept (the craft takes items that are not found in raid first).");
+			HideoutBuyTools = Config.Bind("5. Hideout", "3. Buy missing tools too", true,
+				"The buy button also buys the tools of the craft (the wrench-marked requirements, which are reused and not used up) that you don't have. A tool you hold is never bought again, in any mode. Off: tools are left out, the craft still needs them in your stash.");
+			new HideoutQuickBuy.BuyMaterialsPatch().Enable();
+			new HideoutQuickBuy.StartButtonPatch().Enable();
+			new HideoutQuickBuy.BuyTooltipPatch().Enable();
 			KeepSpeedWhileZooming = Config.Bind("8. Movement", "1. Keep walk speed while zooming a scope", false,
 				"The mouse wheel changes both your walk speed and the zoom of a smooth-zoom scope. With this on, the wheel does not change your walk speed while you aim through a smooth-zoom (variable) scope and hold your scope zoom key combination (for example Alt + wheel). The wheel alone, other sights and not aiming are not affected.");
 			new ScopeZoomSpeedPatch().Enable();

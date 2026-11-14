@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Comfort.Common;
 using EFT;
 using EFT.Communications;
+using EFT.Hideout;
 using EFT.InventoryLogic;
 using EFT.UI;
 using EFT.UI.Ragfair;
@@ -35,10 +36,46 @@ namespace CustomRpTweaks.Client
 	{
 		internal static string ButtonText => Plugin.FleaBarterBuyComplete.Value ? "Buy & fulfil" : "Buy items";
 
-		// What the button buys, from the setting: everything the barter asks for, or only what you don't hold (found-in-raid items counted as held or not)
-		internal static Mode CurrentMode => Plugin.FleaBarterBuyMode.Value == QuickBuyMode.BuyAll ? Mode.All : Mode.Missing;
-		internal static bool FirAsMissing => Plugin.FleaBarterBuyMode.Value == QuickBuyMode.BuyMissingNoFir;
+		// What a quick buy is about: the requirements, how what you hold is counted, and the rules (from the settings of the screen it is on)
+		internal class Source
+		{
+			public Offer Offer;                                                          // the barter offer; null for a hideout craft
+			public IExchangeRequirement[] Requirements;
+			public Func<IExchangeRequirement, int> Required;
+			public Func<Item, IExchangeRequirement, bool> Suitable;                      // can this item of the stash be used for the requirement
+			public Func<IExchangeRequirement, bool> Consumed = requirement => true;      // false: a tool, only bought when you don't have it
+			public Func<IExchangeRequirement, bool> NeedsFir = requirement => false;     // only found-in-raid items will do: not for sale
+			public Func<List<Item>> Stash;
+			public bool UnbuyableBlocks;                                                 // something the flea market can't supply stops the buy (barter) or is left to the stash (craft)
+			public QuickBuyMode Setting;
+			public Mode Buying => Setting == QuickBuyMode.BuyAll ? Mode.All : Mode.Missing;
+			public bool FirAsMissing => Setting == QuickBuyMode.BuyMissingNoFir;
+		}
 
+		internal static Source BarterSource(RagFair ragfair, Offer offer) => new Source
+		{
+			Offer = offer,
+			Requirements = offer.Requirements,
+			Required = requirement => Required(offer, requirement),
+			Suitable = (item, requirement) => HandoverExtensions.AvailableToHandover(item, requirement),
+			Stash = () => ragfair._tradingSession.Profile.Inventory.Stash.GetAllItemsFromCollection().ToList(),
+			UnbuyableBlocks = true,
+			Setting = Plugin.FleaBarterBuyMode.Value
+		};
+
+		internal static Source HideoutSource(ProduceView view) => new Source
+		{
+			Requirements = view.Scheme.RequiredItems.Where(requirement => Plugin.HideoutBuyTools.Value || !(requirement is ToolRequirement)).Cast<IExchangeRequirement>().ToArray(),
+			Required = requirement => requirement.IntCount,
+			Suitable = (item, requirement) => ItemRequirement.IsSuitableItem(requirement, item),
+			Consumed = requirement => !(requirement is ToolRequirement),
+			NeedsFir = requirement => requirement.IsSpawnedInSession,
+			Stash = () => Singleton<HideoutRepresentation>.Instance.AllStashItems.Where(item => item != null).ToList(),
+			UnbuyableBlocks = false,
+			Setting = Plugin.HideoutBuyMode.Value
+		};
+
+		internal static RagFair RagfairOf(ProduceView view) => view.ItemUiContext.Session.RagFair;
 		internal enum Mode { Missing, All }
 
 		// What one requirement of the barter needs: how many to buy, and the offers they come from
@@ -52,6 +89,7 @@ namespace CustomRpTweaks.Client
 			public int Spare;
 			public int Owned;
 			public int FirHeld;
+			public int Held;
 			public bool CannotBuy;
 			public readonly List<Pick> Picks = new List<Pick>();
 			public int Bought => Picks.Sum(pick => pick.Count);
@@ -150,7 +188,8 @@ namespace CustomRpTweaks.Client
 			return null;
 		}
 
-		internal static async void Start(RagFair ragfair, Offer offer)
+		// One quick buy at a time
+		private static async Task Guard(Func<Task> work)
 		{
 			if (_running)
 			{
@@ -161,7 +200,7 @@ namespace CustomRpTweaks.Client
 			_running = true;
 			try
 			{
-				await Run(ragfair, offer, CurrentMode);
+				await work();
 			}
 			catch (Exception e)
 			{
@@ -175,20 +214,25 @@ namespace CustomRpTweaks.Client
 			}
 		}
 
-		private static async Task Run(RagFair ragfair, Offer offer, Mode mode)
+		internal static async void Start(RagFair ragfair, Offer offer) => await Guard(() => Run(ragfair, BarterSource(ragfair, offer)));
+
+		internal static async void StartHideout(ProduceView view) => await Guard(() => Run(RagfairOf(view), HideoutSource(view)));
+
+		private static async Task Run(RagFair ragfair, Source src)
 		{
-			var session = ragfair._tradingSession;
-			var profile = session.Profile;
+			var offer = src.Offer;
+			var profile = ragfair._tradingSession.Profile;
 			var inventory = profile.Inventory;
 			var search = new Dictionary<string, List<Offer>>();
 
-			if (!offer.CanBeBought || offer.IsOutOfStockNow())
+			if (offer != null && (!offer.CanBeBought || offer.IsOutOfStockNow()))
 			{
 				Notify("Quick buy: this offer can't be bought right now.");
 				return;
 			}
 
-			var plan = await MakePlan(ragfair, profile, offer, mode, search, Wallet(profile.Inventory.Stash.GetAllItemsFromCollection()));
+			// Everything is worked out first: nothing is bought unless all of it can be had and paid for
+			var plan = await MakePlan(ragfair, profile, src, search, Wallet(inventory.Stash.GetAllItemsFromCollection()));
 			if (plan.Problems.Count > 0)
 			{
 				Notify("Quick buy: nothing bought. " + string.Join(" ", plan.Problems));
@@ -226,7 +270,8 @@ namespace CustomRpTweaks.Client
 			var spare = plan.Needs.Sum(need => need.Spare);
 			var summary = plan.Bought == 0 ? "nothing needed buying" : $"bought {plan.Bought} item{(plan.Bought == 1 ? "" : "s")} for {plan.TotalText}" + (spare > 0 ? $" ({spare} spare in a pack)" : "");
 
-			if (!Plugin.FleaBarterBuyComplete.Value)
+			// A craft: the items are in the stash, starting it is up to you
+			if (offer == null || !Plugin.FleaBarterBuyComplete.Value)
 			{
 				Notify("Quick buy: " + summary + ".");
 				return;
@@ -237,7 +282,7 @@ namespace CustomRpTweaks.Client
 			for (var attempt = 0; attempt < 10; attempt++)
 			{
 				stash = inventory.Stash.GetAllItemsFromCollection().ToList();
-				handover = Handover(stash, offer);
+				handover = Handover(src, stash);
 				if (handover != null)
 				{
 					break;
@@ -264,19 +309,18 @@ namespace CustomRpTweaks.Client
 			Notify("Quick buy: " + summary + ", buying the barter.");
 			await screen.PerformPurchase(barter);
 		}
-
 		private static bool IsOutOfStockNow(this Offer offer) => offer.TotalItemCount <= 0;
 
-		// What a quote depends on besides the offers: what the barter asks for now (the server may raise it) and what you hold. A quote is
+		// What a quote depends on besides the offers: what is asked for now (the server may raise a barter) and what you hold. A quote is
 		// only reused while this stays the same.
-		internal static string StateKey(RagFair ragfair, Offer offer)
+		internal static string StateKey(Source src)
 		{
-			var stash = ragfair._tradingSession.Profile.Inventory.Stash.GetAllItemsFromCollection().Where(item => item != null).ToList();
+			var stash = src.Stash().Where(item => item != null).ToList();
 			var key = new StringBuilder();
-			foreach (var requirement in offer.Requirements)
+			foreach (var requirement in src.Requirements)
 			{
 				var held = stash.Where(item => item.StringTemplateId == requirement.TemplateId).ToList();
-				key.Append(requirement.TemplateId).Append('=').Append(Required(offer, requirement)).Append('/').Append(held.Sum(item => item.StackObjectsCount))
+				key.Append(requirement.TemplateId).Append('=').Append(src.Required(requirement)).Append('/').Append(held.Sum(item => item.StackObjectsCount))
 					.Append('/').Append(held.Where(item => item.MarkedAsSpawnedInSession).Sum(item => item.StackObjectsCount)).Append(';');
 			}
 
@@ -287,7 +331,6 @@ namespace CustomRpTweaks.Client
 
 			return key.ToString();
 		}
-
 		private const string Yellow = "#F2C94C", Green = "#6FCF6F", Blue = "#5AA9F2", Red = "#E0554A", Grey = "#9A9A9A";
 
 		private static string Number(long amount) => amount.ToString("N0", CultureInfo.InvariantCulture).Replace(",", " ");
@@ -305,31 +348,36 @@ namespace CustomRpTweaks.Client
 
 		private static string Note(string text) => $"<size=85%><color={Grey}>{text}</color></size>";
 
-		// Found-in-raid items that are held but won't go into a quick buy missing
-		private static IEnumerable<string> FirNotes(Plan plan, Mode mode)
+		// Notes under the tooltip: found-in-raid items that are held but won't be used, and what the flea market can't supply
+		private static IEnumerable<string> Notes(Plan plan, Source src)
 		{
-			if (mode != Mode.Missing || !FirAsMissing)
+			if (src.Buying == Mode.Missing && src.FirAsMissing)
 			{
-				yield break;
+				foreach (var need in plan.Needs.Where(need => need.FirHeld > 0 && src.Consumed(need.Requirement) && !src.NeedsFir(need.Requirement)))
+				{
+					var covers = need.Shortfall > 0 && need.FirHeld >= need.Shortfall ? " They would cover what is missing." : "";
+					yield return Note($"You have {need.FirHeld} found-in-raid {need.Name}, but those won't be used.{covers}");
+				}
 			}
 
-			foreach (var need in plan.Needs.Where(need => need.FirHeld > 0))
+			if (!src.UnbuyableBlocks)
 			{
-				var covers = need.Shortfall > 0 && need.FirHeld >= need.Shortfall ? " They would cover what is missing." : "";
-				yield return Note($"You have {need.FirHeld} found-in-raid {need.Name}, but those won't be used.{covers}");
+				foreach (var need in plan.Needs.Where(need => need.CannotBuy))
+				{
+					yield return Note($"{need.Name} can't be bought on the flea market, you have {need.Held} of {need.Required}.");
+				}
 			}
 		}
 
 		// The tooltip of a button, from the offers as they are now
-		internal static async Task<string> Quote(RagFair ragfair, Offer offer)
+		internal static async Task<string> Quote(RagFair ragfair, Source src)
 		{
-			var mode = CurrentMode;
 			var profile = ragfair._tradingSession.Profile;
 			var search = new Dictionary<string, List<Offer>>();
-			var plan = await MakePlan(ragfair, profile, offer, mode, search, null);
+			var plan = await MakePlan(ragfair, profile, src, search, null);
 			var lines = new List<string>();
 
-			var unsellable = plan.Needs.Where(need => need.CannotBuy).ToList();
+			var unsellable = src.UnbuyableBlocks ? plan.Needs.Where(need => need.CannotBuy).ToList() : new List<Need>();
 			var lacking = plan.Needs.Where(need => !need.CannotBuy && need.Shortfall > 0).ToList();
 			if (unsellable.Count > 0 || lacking.Count > 0)
 			{
@@ -343,21 +391,21 @@ namespace CustomRpTweaks.Client
 					lines.Add($"<b><color={Red}>Can't fulfill:</color></b> " + string.Join(", ", unsellable.Select(need => $"<b>{need.Name}</b>")) + " can't be bought on the flea market");
 				}
 
-				lines.AddRange(FirNotes(plan, mode));
+				lines.AddRange(Notes(plan, src));
 				return string.Join("\n", lines);
 			}
 
 			if (plan.Bought == 0)
 			{
 				lines.Add("<b>Nothing to buy:</b> you hold everything it asks for");
-				lines.AddRange(FirNotes(plan, mode));
+				lines.AddRange(Notes(plan, src));
 				return string.Join("\n", lines);
 			}
 
 			lines.Add("<b>Will buy:</b> " + string.Join(", ", plan.Needs.Where(need => need.Bought > 0).Select(need => $"<b>{need.Bought}</b> {need.Name}" + (need.Spare > 0 ? $" (+{need.Spare} spare)" : ""))));
 
 			var wallet = Wallet(profile.Inventory.Stash.GetAllItemsFromCollection());
-			var held = await MakePlan(ragfair, profile, offer, mode, search, new Dictionary<ECurrencyType, long>(wallet));
+			var held = await MakePlan(ragfair, profile, src, search, new Dictionary<ECurrencyType, long>(wallet));
 			var totals = plan.Totals();
 			if (held.Problems.Count == 0)
 			{
@@ -373,28 +421,27 @@ namespace CustomRpTweaks.Client
 				}
 			}
 
-			lines.AddRange(FirNotes(plan, mode));
+			lines.AddRange(Notes(plan, src));
 			return string.Join("\n", lines);
 		}
-
 		private static int Required(Offer offer, IExchangeRequirement requirement) =>
 			offer.SellInOnePiece ? requirement.IntCount : (int)Math.Ceiling(requirement.PreciseCount);
 
-		// Items of the stash that can go into the barter, the way the game's own hand-over window picks them: not found in raid first
+		// Items of the stash that can be used for a requirement, the way the game's own hand-over picks them: not found in raid first
 		// (so a found-in-raid item is only used when nothing else is left), then the smaller stacks
-		private static IEnumerable<Item> Candidates(IEnumerable<Item> stash, IExchangeRequirement requirement, bool includeFir) =>
-			stash.Where(item => item != null && item.StringTemplateId == requirement.TemplateId && HandoverExtensions.AvailableToHandover(item, requirement) && (includeFir || !item.MarkedAsSpawnedInSession))
+		private static IEnumerable<Item> Candidates(Source src, IEnumerable<Item> stash, IExchangeRequirement requirement, bool includeFir) =>
+			stash.Where(item => item != null && item.StringTemplateId == requirement.TemplateId && src.Suitable(item, requirement) && (includeFir || !item.MarkedAsSpawnedInSession))
 				.OrderBy(item => item.MarkedAsSpawnedInSession)
 				.ThenBy(item => item.StackObjectsCount);
 
 		// The references of the items to hand over for the barter, or null when the stash doesn't hold everything it asks for
-		private static List<ItemReference> Handover(List<Item> stash, Offer offer)
+		private static List<ItemReference> Handover(Source src, List<Item> stash)
 		{
 			var references = new List<ItemReference>();
-			foreach (var requirement in offer.Requirements)
+			foreach (var requirement in src.Requirements)
 			{
-				var remaining = Required(offer, requirement);
-				foreach (var item in Candidates(stash, requirement, true))
+				var remaining = src.Required(requirement);
+				foreach (var item in Candidates(src, stash, requirement, true))
 				{
 					if (remaining <= 0)
 					{
@@ -415,37 +462,36 @@ namespace CustomRpTweaks.Client
 			return references;
 		}
 
-		private static async Task<Plan> MakePlan(RagFair ragfair, Profile profile, Offer offer, Mode mode, Dictionary<string, List<Offer>> search, Dictionary<ECurrencyType, long> budget)
+		private static async Task<Plan> MakePlan(RagFair ragfair, Profile profile, Source src, Dictionary<string, List<Offer>> search, Dictionary<ECurrencyType, long> budget)
 		{
 			var plan = new Plan();
-			var stash = profile.Inventory.Stash.GetAllItemsFromCollection().ToList();
+			var stash = src.Stash();
+			var mode = src.Buying;
 
-			foreach (var requirement in offer.Requirements)
+			foreach (var requirement in src.Requirements)
 			{
-				var need = new Need { Requirement = requirement, Name = NameOf(requirement.Item), Required = Required(offer, requirement) };
+				var need = new Need { Requirement = requirement, Name = NameOf(requirement.Item), Required = src.Required(requirement) };
 				plan.Needs.Add(need);
 
-				need.FirHeld = Candidates(stash, requirement, true).Where(item => item.MarkedAsSpawnedInSession).Sum(item => item.StackObjectsCount);
-				var owned = Candidates(stash, requirement, mode == Mode.All || !FirAsMissing).Sum(item => item.StackObjectsCount);
+				// A tool isn't used up, so it is only bought when you don't have it; a found-in-raid requirement only takes found-in-raid items
+				var consumed = src.Consumed(requirement);
+				var needsFir = src.NeedsFir(requirement);
+				need.Held = Candidates(src, stash, requirement, true).Sum(item => item.StackObjectsCount);
+				need.FirHeld = Candidates(src, stash, requirement, true).Where(item => item.MarkedAsSpawnedInSession).Sum(item => item.StackObjectsCount);
+				var owned = Candidates(src, stash, requirement, mode == Mode.All || !src.FirAsMissing || !consumed || needsFir).Sum(item => item.StackObjectsCount);
 				need.Owned = owned;
-				need.ToBuy = mode == Mode.All ? need.Required : Math.Max(0, need.Required - owned);
+				need.ToBuy = mode == Mode.All && consumed ? need.Required : Math.Max(0, need.Required - owned);
 				if (need.ToBuy <= 0)
 				{
 					continue;
 				}
 
-				// Money and dog tags can't be bought on the flea market
-				if (CurrencyUtil.IsCurrencyId(requirement.TemplateId) || requirement.Item.GetItemComponent<DogtagComponent>() != null)
+				// Money, dog tags and found-in-raid items can't be bought on the flea market: what you hold is what there is
+				if (needsFir || CurrencyUtil.IsCurrencyId(requirement.TemplateId) || requirement.Item.GetItemComponent<DogtagComponent>() != null)
 				{
-					need.CannotBuy = true;
-					if (mode == Mode.All)
-					{
-						// Nothing to buy: what you hold is used
-						need.ToBuy = 0;
-						need.CannotBuy = Candidates(stash, requirement, true).Sum(item => item.StackObjectsCount) < need.Required;
-					}
-
-					if (need.CannotBuy)
+					need.ToBuy = 0;
+					need.CannotBuy = need.Held < need.Required;
+					if (need.CannotBuy && src.UnbuyableBlocks)
 					{
 						plan.Problems.Add($"{need.Name} can't be bought on the flea market and you don't have {need.Required}.");
 					}
@@ -471,7 +517,6 @@ namespace CustomRpTweaks.Client
 
 			return plan;
 		}
-
 		private static double UnitPrice(Offer offer) => offer.SellInOnePiece ? offer.Requirements[0].PreciseCount / Math.Max(1, offer.Quantity) : offer.Requirements[0].PreciseCount;
 
 		private static void Take(Need need, Offer offer, int count)
