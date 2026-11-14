@@ -67,6 +67,22 @@ namespace CustomRpTweaks.Client
 			return raised;
 		}
 
+		// A screen is told what an offer cost before it changed (the trader's offers the game held before it reloaded them): that is its base,
+		// whatever the screen made of the price when it first drew it
+		internal static void NoteBase(char screen, string traderId, string offerId, int basePrice)
+		{
+			if (!Active || basePrice < 1)
+			{
+				return;
+			}
+
+			string key = screen + "|" + traderId + "|" + offerId;
+			if (!_baseline.TryGetValue(key, out int lowest) || basePrice < lowest)
+			{
+				_baseline[key] = basePrice;
+			}
+		}
+
 		// Wraps a task the game awaits for trader offers or flea results, so the one request is made once the response is in
 		internal static async Task<T> SeedAfter<T>(Task<T> task)
 		{

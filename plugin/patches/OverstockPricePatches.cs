@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
@@ -147,6 +148,74 @@ namespace CustomRpTweaks.Client.Patches
 				var label = ___ItemUiContext.PriceTooltip._price;
 				label.enableWordWrapping = false;
 				label.text = "<size=75%><color=" + Plugin.PriceIndicatorOldColor.Value + "><s>" + basePrice + "</s></color></size> " + Raised(price.Value.Amount.ToString());
+			}
+		}
+
+		// The game reloads a trader's offers (after a purchase, say) and keeps the old ones in memory until then: whatever got dearer between the
+		// two is told to the trader screen with its old price as the base, so it is judged against what it cost, not against what it cost when
+		// the screen first drew it. No request: both lists are the client's own.
+		internal class TraderReloadPatch : ModulePatch
+		{
+			protected override MethodBase GetTargetMethod() => typeof(Assortment).GetMethod(nameof(Assortment.UpdateAssortment), BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly);
+
+			[PatchPrefix]
+			private static void Prefix(Assortment __instance, out Dictionary<string, BarterScheme> __state)
+			{
+				__state = __instance._schemes;
+			}
+
+			[PatchPostfix]
+			private static void Postfix(Assortment __instance, ref Task __result, Dictionary<string, BarterScheme> __state)
+			{
+				if (OverstockPrices.Active && __state != null)
+				{
+					__result = NoteAfter(__result, __instance, __state);
+				}
+			}
+
+			private static async Task NoteAfter(Task task, Assortment assortment, Dictionary<string, BarterScheme> before)
+			{
+				await task;
+				try
+				{
+					var after = assortment._schemes;
+					var traderId = assortment._trader?.Id;
+					if (after == null || traderId == null || ReferenceEquals(before, after))
+					{
+						return;
+					}
+
+					foreach (var pair in after)
+					{
+						if (!before.TryGetValue(pair.Key, out var old))
+						{
+							continue;
+						}
+
+						// What the trader grid shows for it: the counts added up, rounded up
+						int oldPrice = (int)Math.Ceiling(old.Sum(variant => variant.Sum(template => template.count)));
+						int newPrice = (int)Math.Ceiling(pair.Value.Sum(variant => variant.Sum(template => template.count)));
+						if (newPrice > oldPrice)
+						{
+							OverstockPrices.NoteBase('t', traderId, pair.Key, oldPrice);
+						}
+
+						// What the barter panel shows: the count of each item asked for
+						var oldCounts = old.SelectMany(variant => variant).GroupBy(template => template._tpl).ToDictionary(group => group.Key, group => (int)Math.Ceiling(group.Sum(template => template.count)));
+						foreach (var group in pair.Value.SelectMany(variant => variant).GroupBy(template => template._tpl))
+						{
+							int newCount = (int)Math.Ceiling(group.Sum(template => template.count));
+							if (oldCounts.TryGetValue(group.Key, out int oldCount) && newCount > oldCount)
+							{
+								OverstockPrices.NoteBase('b', traderId, pair.Key + ":" + group.Key, oldCount);
+							}
+						}
+					}
+				}
+				catch (Exception e)
+				{
+					Plugin.Log.LogWarning("Price indicator: couldn't compare the trader's offers before and after the reload: " + e.Message);
+				}
 			}
 		}
 

@@ -304,6 +304,7 @@ namespace CustomRpTweaks.Client
 			new OverstockPricePatches.TraderTooltipPatch().Enable();
 			new OverstockPricePatches.FleaRowPricePatch().Enable();
 			new OverstockPricePatches.TraderBarterCountPatch().Enable();
+			new OverstockPricePatches.TraderReloadPatch().Enable();
 			new OverstockPricePatches.FleaBarterCountPatch().Enable();
 
 			ServerTime.Setup(Config);
