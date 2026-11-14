@@ -351,21 +351,30 @@ namespace CustomRpTweaks.Client
 		// Notes under the tooltip: found-in-raid items that are held but won't be used, and what the flea market can't supply
 		private static IEnumerable<string> Notes(Plan plan, Source src)
 		{
-			// What it isn't buying, and why: you hold enough (counted the way the mode counts, found-in-raid items or not)
-			var enough = plan.Needs.Where(need => need.ToBuy == 0 && !need.CannotBuy).ToList();
-			if (enough.Count > 0)
+			// What you hold of each requirement, counted the way the mode counts (found-in-raid items or not): it says why something is bought,
+			// or isn't. Green when what you hold covers it.
+			var have = new List<string>();
+			foreach (var need in plan.Needs)
 			{
-				yield return Note("<b>You already have:</b> " + string.Join(", ", enough.Select(need => $"{need.Name} {(need.Owned >= need.Required ? need.Owned : need.Held)}/{need.Required}")));
+				if (need.CannotBuy && src.UnbuyableBlocks)
+				{
+					continue;
+				}
+
+				var counted = need.Owned >= need.Required ? need.Owned : (need.ToBuy == 0 || need.CannotBuy ? need.Held : need.Owned);
+				var text = $"{need.Name} <color={(counted >= need.Required ? Green : Yellow)}>{counted}/{need.Required}</color>";
+				if (need.ToBuy > 0 && need.FirHeld > 0 && src.Buying == Mode.Missing && src.FirAsMissing && src.Consumed(need.Requirement) && !src.NeedsFir(need.Requirement))
+				{
+					var covers = need.Shortfall > 0 && need.FirHeld >= need.Shortfall ? "; they would cover the gap" : "";
+					text += $" (+{need.FirHeld} found-in-raid, not counted{covers})";
+				}
+
+				have.Add(text);
 			}
 
-			if (src.Buying == Mode.Missing && src.FirAsMissing)
+			if (have.Count > 0)
 			{
-				// Only where it matters: for an item that is being bought (or can't be), not one the non-FiR items you hold already cover
-				foreach (var need in plan.Needs.Where(need => need.ToBuy > 0 && need.FirHeld > 0 && src.Consumed(need.Requirement) && !src.NeedsFir(need.Requirement)))
-				{
-					var covers = need.Shortfall > 0 && need.FirHeld >= need.Shortfall ? " They would cover what is missing." : "";
-					yield return Note($"Your {need.FirHeld} found-in-raid {need.Name} are not counted.{covers}");
-				}
+				yield return Note("<b>You have:</b> " + string.Join(", ", have));
 			}
 
 			if (!src.UnbuyableBlocks)
