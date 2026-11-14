@@ -374,7 +374,8 @@ namespace CustomRpTweaks.Client
 
 			if (have.Count > 0)
 			{
-				yield return Note("<b>You have:</b> " + string.Join(", ", have));
+				// One line per requirement, so a long list stays readable
+				yield return Note("<b>You have:</b>\n" + string.Join("\n", have));
 			}
 
 			if (!src.UnbuyableBlocks)
