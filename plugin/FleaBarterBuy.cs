@@ -22,9 +22,8 @@ namespace CustomRpTweaks.Client
 	{
 		internal const string MissingKey = "Quick buy missing";
 		internal const string AllKey = "Quick buy all";
-		internal const string QuoteKey = "Barter cost";
 
-		private enum Mode { Missing, All, Quote }
+		internal enum Mode { Missing, All }
 
 		// What one requirement of the barter needs: how many to buy, and the offers they come from
 		private class Need
@@ -111,7 +110,6 @@ namespace CustomRpTweaks.Client
 			var offer = FindOffer(ragfair, itemContext.Item);
 			interactions.RemoveDynamicInteraction(MissingKey);
 			interactions.RemoveDynamicInteraction(AllKey);
-			interactions.RemoveDynamicInteraction(QuoteKey);
 			if (offer == null || offer.NotAvailable || offer.OnlyMoney || offer.Requirements == null || offer.Requirements.Length == 0 || ragfair.Disabled)
 			{
 				return;
@@ -119,7 +117,6 @@ namespace CustomRpTweaks.Client
 
 			HandIn.AddDynamic.Invoke(interactions, new object[] { MissingKey, MissingKey, (Action)(() => Start(ragfair, offer, Mode.Missing)), null });
 			HandIn.AddDynamic.Invoke(interactions, new object[] { AllKey, AllKey, (Action)(() => Start(ragfair, offer, Mode.All)), null });
-			HandIn.AddDynamic.Invoke(interactions, new object[] { QuoteKey, QuoteKey, (Action)(() => Start(ragfair, offer, Mode.Quote)), null });
 		}
 
 		private static Offer FindOffer(RagFair ragfair, Item item)
@@ -135,7 +132,7 @@ namespace CustomRpTweaks.Client
 			return null;
 		}
 
-		private static async void Start(RagFair ragfair, Offer offer, Mode mode)
+		internal static async void Start(RagFair ragfair, Offer offer, Mode mode)
 		{
 			if (_running)
 			{
@@ -169,15 +166,6 @@ namespace CustomRpTweaks.Client
 			if (!offer.CanBeBought || offer.IsOutOfStockNow())
 			{
 				Notify("Quick buy: this offer can't be bought right now.");
-				return;
-			}
-
-			if (mode == Mode.Quote)
-			{
-				// The cost doesn't depend on what you hold: no limit from the money you have
-				var missing = await MakePlan(ragfair, profile, offer, Mode.Missing, search, null);
-				var all = await MakePlan(ragfair, profile, offer, Mode.All, search, null);
-				Notify($"Barter cost (not checked against your money): missing {Describe(missing)}; all {Describe(all)}.");
 				return;
 			}
 
@@ -259,6 +247,26 @@ namespace CustomRpTweaks.Client
 		}
 
 		private static bool IsOutOfStockNow(this Offer offer) => offer.TotalItemCount <= 0;
+
+		// The text of the tooltip of a button: what the purchase would cost from the current offers, and whether you hold the money for it
+		internal static async Task<string> Quote(RagFair ragfair, Offer offer, Mode mode)
+		{
+			var profile = ragfair._tradingSession.Profile;
+			var search = new Dictionary<string, List<Offer>>();
+			var unlimited = await MakePlan(ragfair, profile, offer, mode, search, null);
+			if (unlimited.Problems.Count > 0)
+			{
+				return "Can't be bought: " + string.Join(" ", unlimited.Problems);
+			}
+
+			if (unlimited.Bought == 0)
+			{
+				return "Nothing to buy, you hold everything it asks for.";
+			}
+
+			var held = await MakePlan(ragfair, profile, offer, mode, search, Wallet(profile.Inventory.Stash.GetAllItemsFromCollection()));
+			return Describe(unlimited) + (held.Problems.Count > 0 ? "\n<color=#e0554a>Not enough money for it.</color>" : "");
+		}
 
 		private static string Describe(Plan plan)
 		{

@@ -50,6 +50,7 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<bool> FleaBarterBuyMenu;
 		internal static ConfigEntry<bool> FleaBarterBuyFirAsMissing;
 		internal static ConfigEntry<bool> FleaBarterBuyComplete;
+		internal static ConfigEntry<bool> FleaBarterBuyButtons;
 		internal static ConfigEntry<bool> TaskSearchBox;
 		internal static ConfigEntry<bool> BtrCannonCam;
 		internal static ConfigEntry<float> BtrCannonCamDistance;
@@ -173,12 +174,15 @@ namespace CustomRpTweaks.Client
 			new FleaOfferTimerPatch().Enable();
 
 			FleaBarterBuyMenu = Config.Bind("19. Flea market", "2. Quick buy entries for barter offers", true,
-				"Beside a flea market barter offer (the buttons Inspect, Filter by item, ...) three entries are added. Quick buy missing: buys the items the barter asks for that you don't have, the cheapest offers first (other players' offers: roubles first, then US dollar and euro offers only for what the roubles can't cover and only with the money you hold; a pack sold in one piece only whole), then buys the barter with them. Quick buy all: buys every item the barter asks for, whatever you hold. Barter cost: only works out what both would cost, from the current offers. Nothing is bought unless every item can be had and you hold the money (trader offers and dog tags are not used; no currency exchange). There is no confirmation: the click buys. Takes effect the next time the offer's menu is built.");
+				"In the item menu beside a flea market barter offer (Inspect, Filter by item, ...) two entries are added. Quick buy missing: buys the items the barter asks for that you don't have, the cheapest offers first (other players' offers: roubles first, then US dollar and euro offers only for what the roubles can't cover and only with the money you hold; a pack sold in one piece only whole), then buys the barter with them. Quick buy all: buys every item the barter asks for, whatever you hold. Nothing is bought unless every item can be had and you hold the money (trader offers and dog tags are not used; no currency exchange). There is no confirmation: the click buys. Takes effect the next time the offer's menu is built.");
 			FleaBarterBuyFirAsMissing = Config.Bind("19. Flea market", "3. Quick buy missing: found-in-raid items count as missing", true,
 				"On: the found-in-raid items you hold are not counted as items you have, so Quick buy missing buys the whole requirement and the barter takes the bought items (the game hands in items that are not found in raid first). Off: they count as held.");
 			FleaBarterBuyComplete = Config.Bind("19. Flea market", "4. Quick buy also buys the barter", true,
 				"On: once the items are bought, the barter offer itself is bought with them. Off: only the items are bought, you complete the barter yourself.");
+			FleaBarterBuyButtons = Config.Bind("19. Flea market", "5. Quick buy buttons under the offer's price", true,
+				"Two small buttons (Buy missing, Buy all) under the price of a flea market barter offer, the same as the menu entries. Hover one: the tooltip shows what it would cost from the current offers, and whether you hold the money. Takes effect the next time the offers are drawn.");
 			new FleaBarterBuyMenuPatch().Enable();
+			new FleaBarterBuyButtonsPatch().Enable();
 
 			BtrCannonCam = Config.Bind("21. BTR", "1. Cannon camera while the BTR drives you", true,
 				"While the BTR is driving you somewhere (you are inside it and it is moving), the camera is moved to its turret and looks where the cannon points. Your character stays in the BTR and is visible. When the BTR stops, you get out, or you turn this off, the normal first-person view is back on the next frame.");
