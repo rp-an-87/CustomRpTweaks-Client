@@ -46,6 +46,7 @@ namespace CustomRpTweaks.Client
 			public Func<IExchangeRequirement, bool> Consumed = requirement => true;      // false: a tool, only bought when you don't have it
 			public Func<IExchangeRequirement, bool> NeedsFir = requirement => false;     // only found-in-raid items will do: not for sale
 			public Func<List<Item>> Stash;
+			public Action Refresh;                                                       // tells the screen the stash has changed, after a purchase
 			public bool UnbuyableBlocks;                                                 // something the flea market can't supply stops the buy (barter) or is left to the stash (craft)
 			public QuickBuyMode Setting;
 			public Mode Buying => Setting == QuickBuyMode.BuyAll ? Mode.All : Mode.Missing;
@@ -73,11 +74,35 @@ namespace CustomRpTweaks.Client
 			Consumed = requirement => !(requirement is ToolRequirement),
 			NeedsFir = requirement => requirement.IsSpawnedInSession,
 			Stash = () => Singleton<HideoutRepresentation>.Instance.AllStashItems.Where(item => item != null).ToList(),
+			Refresh = () => RefreshHideout(view),
 			UnbuyableBlocks = false,
 			Setting = Plugin.HideoutBuyMode.Value
 		};
 
 		internal static RagFair RagfairOf(ProduceView view) => view.ItemUiContext.Session.RagFair;
+
+		// The craft screen only learns of items that arrive in the stash through the game's own events, which a flea market purchase doesn't
+		// raise: the hideout's list of stash items is rebuilt (it tells the screens), then the craft's requirements are drawn again
+		private static void RefreshHideout(ProduceView view)
+		{
+			try
+			{
+				var hideout = Singleton<HideoutRepresentation>.Instance;
+				if (hideout != null)
+				{
+					hideout.method_25();
+				}
+
+				if (view != null)
+				{
+					view.UpdateView();
+				}
+			}
+			catch (Exception e)
+			{
+				Plugin.Log.LogWarning("Quick buy: couldn't refresh the craft screen: " + e.Message);
+			}
+		}
 		internal enum Mode { Missing, All }
 
 		// What one requirement of the barter needs: how many to buy, and the offers they come from
@@ -268,6 +293,15 @@ namespace CustomRpTweaks.Client
 					Notify($"Quick buy: the flea market refused the purchase (code {result.ErrorCode}), the offers have probably changed. Try again.");
 					return;
 				}
+			}
+
+			if (plan.Bought > 0 && src.Refresh != null)
+			{
+				// Twice, in case the items land in the stash a moment after the purchase returns
+				await Task.Delay(300);
+				src.Refresh();
+				await Task.Delay(700);
+				src.Refresh();
 			}
 
 			var spare = plan.Needs.Sum(need => need.Spare);
