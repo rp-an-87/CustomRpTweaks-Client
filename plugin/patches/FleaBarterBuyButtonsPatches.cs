@@ -43,7 +43,7 @@ namespace CustomRpTweaks.Client
 				return;
 			}
 
-			var row = existing != null ? existing : Build(label, parent);
+			var row = existing != null ? existing : Build(price, label, parent);
 			row.gameObject.SetActive(true);
 			Bind(row.GetChild(0), ragfair, offer, FleaBarterBuy.Mode.Missing);
 			Bind(row.GetChild(1), ragfair, offer, FleaBarterBuy.Mode.All);
@@ -60,44 +60,42 @@ namespace CustomRpTweaks.Client
 			hover.Mode = mode;
 		}
 
-		private static Transform Build(TextMeshProUGUI label, Transform parent)
+		private static Transform Build(OfferItemPrice price, TextMeshProUGUI label, Transform parent)
 		{
-			var row = new GameObject(RowName, typeof(RectTransform), typeof(LayoutElement), typeof(HorizontalLayoutGroup));
+			var row = new GameObject(RowName, typeof(RectTransform), typeof(LayoutElement), typeof(HorizontalLayoutGroup), typeof(QuickBuyRow));
 			row.transform.SetParent(parent, false);
 			row.GetComponent<LayoutElement>().ignoreLayout = true;
 			var layout = row.GetComponent<HorizontalLayoutGroup>();
-			layout.spacing = 4f;
+			layout.spacing = 3f;
 			layout.childControlWidth = layout.childControlHeight = true;
 			layout.childForceExpandWidth = layout.childForceExpandHeight = true;
 
-			// Just below the "per item" label, as wide as it or at least 180
-			var labelRect = (RectTransform)label.transform;
 			var rect = (RectTransform)row.transform;
-			rect.anchorMin = labelRect.anchorMin;
-			rect.anchorMax = labelRect.anchorMax;
-			rect.pivot = new Vector2(0.5f, 1f);
-			var width = Mathf.Max(labelRect.rect.width, 180f);
-			rect.sizeDelta = new Vector2(labelRect.sizeDelta.x + (width - labelRect.rect.width), 22f);
-			var centerX = labelRect.anchoredPosition.x + (0.5f - labelRect.pivot.x) * labelRect.rect.width;
-			var bottom = labelRect.anchoredPosition.y - labelRect.pivot.y * labelRect.rect.height;
-			rect.anchoredPosition = new Vector2(centerX, bottom - 6f);
+			rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
+			rect.pivot = new Vector2(0.5f, 0f);
+			rect.sizeDelta = new Vector2(QuickBuyRow.Width, QuickBuyRow.Height);
+			var placer = row.GetComponent<QuickBuyRow>();
+			placer.Label = (RectTransform)label.transform;
+			placer.View = price.GetComponentInParent<OfferView>();
 
-			MakeButton(row.transform, "Buy missing", label);
-			MakeButton(row.transform, "Buy all", label);
+			MakeButton(row.transform, "BUY MISSING", label);
+			MakeButton(row.transform, "BUY ALL", label);
 			return row.transform;
 		}
 
+		// Like the game's own flat dark buttons: dark panel, light text, lighter on hover
 		private static void MakeButton(Transform row, string text, TextMeshProUGUI like)
 		{
 			var button = new GameObject(text, typeof(RectTransform), typeof(Image), typeof(Button), typeof(QuoteHover));
 			button.transform.SetParent(row, false);
-			button.GetComponent<Image>().color = new Color(0.3f, 0.33f, 0.34f, 0.95f);
+			var image = button.GetComponent<Image>();
+			image.color = new Color(0.16f, 0.18f, 0.18f, 0.95f);
 			var click = button.GetComponent<Button>();
-			click.targetGraphic = button.GetComponent<Image>();
+			click.targetGraphic = image;
 			var colors = click.colors;
-			colors.normalColor = new Color(0.75f, 0.75f, 0.75f, 1f);
-			colors.highlightedColor = Color.white;
-			colors.pressedColor = new Color(0.55f, 0.55f, 0.55f, 1f);
+			colors.normalColor = Color.white;
+			colors.highlightedColor = new Color(1.6f, 1.6f, 1.6f, 1f);
+			colors.pressedColor = new Color(0.7f, 0.7f, 0.7f, 1f);
 			click.colors = colors;
 
 			var caption = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI));
@@ -105,17 +103,56 @@ namespace CustomRpTweaks.Client
 			var label = caption.GetComponent<TextMeshProUGUI>();
 			label.font = like.font;
 			label.text = text;
-			label.color = Color.white;
+			label.color = new Color(0.82f, 0.81f, 0.74f, 1f);
 			label.alignment = TextAlignmentOptions.Center;
 			label.enableAutoSizing = true;
-			label.fontSizeMin = 8f;
-			label.fontSizeMax = 14f;
+			label.fontSizeMin = 6f;
+			label.fontSizeMax = 9f;
+			label.enableWordWrapping = false;
 			label.raycastTarget = false;
 			var rect = (RectTransform)caption.transform;
 			rect.anchorMin = Vector2.zero;
 			rect.anchorMax = Vector2.one;
-			rect.offsetMin = new Vector2(2f, 1f);
-			rect.offsetMax = new Vector2(-2f, -1f);
+			rect.offsetMin = new Vector2(2f, 0f);
+			rect.offsetMax = new Vector2(-2f, 0f);
+		}
+	}
+
+	// Keeps the row just below the "per item" label, centred on it, without leaving the bottom of the offer's row. Worked out in world
+	// space so it doesn't depend on how the game anchors its panels.
+	internal class QuickBuyRow : MonoBehaviour
+	{
+		internal const float Width = 150f;
+		internal const float Height = 14f;
+
+		public RectTransform Label;
+		public OfferView View;
+		private readonly Vector3[] _corners = new Vector3[4];
+
+		private void LateUpdate()
+		{
+			if (Label == null)
+			{
+				return;
+			}
+
+			var rect = (RectTransform)transform;
+			var scale = rect.lossyScale.y;
+			Label.GetWorldCorners(_corners);
+			var centerX = (_corners[0].x + _corners[3].x) / 2f;
+			var bottom = _corners[0].y - 2f * scale - Height * scale;
+			var viewRect = View == null ? null : View.transform as RectTransform;
+			if (viewRect != null)
+			{
+				viewRect.GetWorldCorners(_corners);
+				bottom = Mathf.Max(bottom, _corners[0].y + 2f * scale);
+			}
+
+			var target = new Vector3(centerX, bottom, rect.position.z);
+			if ((rect.position - target).sqrMagnitude > 1e-6f)
+			{
+				rect.position = target;
+			}
 		}
 	}
 
@@ -141,11 +178,11 @@ namespace CustomRpTweaks.Client
 			var key = Offer.Id + ":" + Mode;
 			if (Cache.TryGetValue(key, out var cached) && Time.realtimeSinceStartup - cached.Key < 20f)
 			{
-				tooltip.Show(cached.Value, null, 0f, 380f);
+				tooltip.Show(cached.Value, null, 0f, 420f);
 				return;
 			}
 
-			tooltip.Show("Working out the cost...", null, 0f, 380f);
+			tooltip.Show("Calculating price...", null, 0f, 420f);
 			string text;
 			try
 			{
@@ -155,13 +192,13 @@ namespace CustomRpTweaks.Client
 			catch (Exception e)
 			{
 				Plugin.Log.LogError($"Quick buy cost failed: {e}");
-				text = "Couldn't work out the cost.";
+				text = "Couldn't work out the price.";
 			}
 
 			// Still on the same hover?
 			if (this != null && token == _hover && tooltip != null)
 			{
-				tooltip.Show(text, null, 0f, 380f);
+				tooltip.Show(text, null, 0f, 420f);
 			}
 		}
 

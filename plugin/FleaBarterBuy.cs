@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using System.Threading.Tasks;
 using Comfort.Common;
 using EFT;
@@ -34,6 +35,8 @@ namespace CustomRpTweaks.Client
 			public int ToBuy;
 			public int Shortfall;
 			public int Spare;
+			public int Owned;
+			public int FirHeld;
 			public bool CannotBuy;
 			public readonly List<Pick> Picks = new List<Pick>();
 			public int Bought => Picks.Sum(pick => pick.Count);
@@ -248,39 +251,92 @@ namespace CustomRpTweaks.Client
 
 		private static bool IsOutOfStockNow(this Offer offer) => offer.TotalItemCount <= 0;
 
-		// The text of the tooltip of a button: what the purchase would cost from the current offers, and whether you hold the money for it
+		private const string Yellow = "#F2C94C", Green = "#6FCF6F", Blue = "#5AA9F2", Red = "#E0554A", Grey = "#9A9A9A";
+
+		private static string Number(long amount) => amount.ToString("N0", CultureInfo.InvariantCulture).Replace(",", " ");
+
+		private static string Symbol(ECurrencyType currency, bool colour)
+		{
+			var symbol = currency == ECurrencyType.RUB ? "\u20bd" : currency == ECurrencyType.USD ? "$" : "\u20ac";
+			var tint = currency == ECurrencyType.RUB ? Yellow : currency == ECurrencyType.USD ? Green : Blue;
+			return colour ? $"<color={tint}><b>{symbol}</b></color>" : "<b>" + symbol + "</b>";
+		}
+
+		// "P 21 321, $ 12 346, E 1 234" with the symbols in their colours (or plain, to be drawn in one colour)
+		private static string Price(Dictionary<ECurrencyType, long> amounts, bool colour) =>
+			string.Join(", ", Currencies.Where(currency => amounts.TryGetValue(currency, out var value) && value > 0).Select(currency => $"{Symbol(currency, colour)} <b>{Number(amounts[currency])}</b>"));
+
+		private static string Note(string text) => $"<size=85%><color={Grey}>{text}</color></size>";
+
+		// Found-in-raid items that are held but won't go into a quick buy missing
+		private static IEnumerable<string> FirNotes(Plan plan, Mode mode)
+		{
+			if (mode != Mode.Missing || !Plugin.FleaBarterBuyFirAsMissing.Value)
+			{
+				yield break;
+			}
+
+			foreach (var need in plan.Needs.Where(need => need.FirHeld > 0))
+			{
+				var covers = need.Shortfall > 0 && need.FirHeld >= need.Shortfall ? " They would cover what is missing." : "";
+				yield return Note($"You have {need.FirHeld} found-in-raid {need.Name}, but those won't be used.{covers}");
+			}
+		}
+
+		// The tooltip of a button, from the offers as they are now
 		internal static async Task<string> Quote(RagFair ragfair, Offer offer, Mode mode)
 		{
 			var profile = ragfair._tradingSession.Profile;
 			var search = new Dictionary<string, List<Offer>>();
-			var unlimited = await MakePlan(ragfair, profile, offer, mode, search, null);
-			if (unlimited.Problems.Count > 0)
-			{
-				return "Can't be bought: " + string.Join(" ", unlimited.Problems);
-			}
+			var plan = await MakePlan(ragfair, profile, offer, mode, search, null);
+			var lines = new List<string>();
 
-			if (unlimited.Bought == 0)
+			var unsellable = plan.Needs.Where(need => need.CannotBuy).ToList();
+			var lacking = plan.Needs.Where(need => !need.CannotBuy && need.Shortfall > 0).ToList();
+			if (unsellable.Count > 0 || lacking.Count > 0)
 			{
-				return "Nothing to buy, you hold everything it asks for.";
-			}
+				if (lacking.Count > 0)
+				{
+					lines.Add($"<b><color={Red}>Can't fulfill:</color></b> not enough offers for " + string.Join(", ", lacking.Select(need => $"<b>{need.Name}</b> ({need.ToBuy - need.Shortfall}/{need.ToBuy})")) + " in the flea market");
+				}
 
-			var held = await MakePlan(ragfair, profile, offer, mode, search, Wallet(profile.Inventory.Stash.GetAllItemsFromCollection()));
-			return Describe(unlimited) + (held.Problems.Count > 0 ? "\n<color=#e0554a>Not enough money for it.</color>" : "");
-		}
+				if (unsellable.Count > 0)
+				{
+					lines.Add($"<b><color={Red}>Can't fulfill:</color></b> " + string.Join(", ", unsellable.Select(need => $"<b>{need.Name}</b>")) + " can't be bought on the flea market");
+				}
 
-		private static string Describe(Plan plan)
-		{
-			if (plan.Problems.Count > 0)
-			{
-				return string.Join(" ", plan.Problems);
+				lines.AddRange(FirNotes(plan, mode));
+				return string.Join("\n", lines);
 			}
 
 			if (plan.Bought == 0)
 			{
-				return "nothing to buy";
+				lines.Add("<b>Nothing to buy:</b> you hold everything it asks for");
+				lines.AddRange(FirNotes(plan, mode));
+				return string.Join("\n", lines);
 			}
 
-			return $"{plan.TotalText} ({plan.Bought} item{(plan.Bought == 1 ? "" : "s")}: " + string.Join(", ", plan.Needs.Where(need => need.Bought > 0).Select(need => $"{need.Bought}x {need.Name}")) + ")";
+			lines.Add("<b>Will buy:</b> " + string.Join(", ", plan.Needs.Where(need => need.Bought > 0).Select(need => $"<b>{need.Bought}</b> {need.Name}" + (need.Spare > 0 ? $" (+{need.Spare} spare)" : ""))));
+
+			var wallet = Wallet(profile.Inventory.Stash.GetAllItemsFromCollection());
+			var held = await MakePlan(ragfair, profile, offer, mode, search, new Dictionary<ECurrencyType, long>(wallet));
+			var totals = plan.Totals();
+			if (held.Problems.Count == 0)
+			{
+				lines.Add("<b>Buy for:</b> " + Price(totals, true));
+			}
+			else
+			{
+				lines.Add($"<b><color={Red}>Can't buy: {Price(totals, false)}</color></b>");
+				var missing = totals.Where(pair => pair.Value > wallet[pair.Key]).ToDictionary(pair => pair.Key, pair => pair.Value - wallet[pair.Key]);
+				if (missing.Count > 0)
+				{
+					lines.Add(Note("You are short by " + Price(missing, true)));
+				}
+			}
+
+			lines.AddRange(FirNotes(plan, mode));
+			return string.Join("\n", lines);
 		}
 
 		private static int Required(Offer offer, IExchangeRequirement requirement) =>
@@ -331,7 +387,9 @@ namespace CustomRpTweaks.Client
 				var need = new Need { Requirement = requirement, Name = NameOf(requirement.Item), Required = Required(offer, requirement) };
 				plan.Needs.Add(need);
 
+				need.FirHeld = Candidates(stash, requirement, true).Where(item => item.MarkedAsSpawnedInSession).Sum(item => item.StackObjectsCount);
 				var owned = Candidates(stash, requirement, mode == Mode.All || !Plugin.FleaBarterBuyFirAsMissing.Value).Sum(item => item.StackObjectsCount);
+				need.Owned = owned;
 				need.ToBuy = mode == Mode.All ? need.Required : Math.Max(0, need.Required - owned);
 				if (need.ToBuy <= 0)
 				{
@@ -365,7 +423,11 @@ namespace CustomRpTweaks.Client
 
 				if (!Allocate(need, offers, budget))
 				{
-					plan.Problems.Add($"Only {need.ToBuy - need.Shortfall} of {need.ToBuy} {need.Name} can be had with the money you hold.");
+					// Is it the offers that run out, or only the money?
+					var enoughOffers = Allocate(new Need { ToBuy = need.ToBuy }, offers, null);
+					plan.Problems.Add(enoughOffers
+						? $"Only {need.ToBuy - need.Shortfall} of {need.ToBuy} {need.Name} can be had with the money you hold."
+						: $"Only {need.ToBuy - need.Shortfall} of {need.ToBuy} {need.Name} are for sale on the flea market.");
 				}
 			}
 
