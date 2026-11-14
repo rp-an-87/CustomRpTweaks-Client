@@ -15,7 +15,7 @@ namespace CustomRpTweaks.Client
 	// F12 buttons that ask the CustomRpTweaks server mod to set the raid clock (menu or raid, it applies to raids started after).
 	internal static class ServerTime
 	{
-		private const string Section = "20. Server time";
+		private const string Section = "23. Server time";
 		private static readonly int[] Hours = { 0, 3, 6, 12, 18, 21 };
 		private static readonly string[] Names = { "midnight", "late night", "morning", "noon", "afternoon", "night" };
 

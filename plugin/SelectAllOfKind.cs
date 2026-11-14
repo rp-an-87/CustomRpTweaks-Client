@@ -57,7 +57,7 @@ namespace CustomRpTweaks.Client
 					return;
 				}
 
-				Hotkey = config.Bind("22. Select all of kind", "1. Select all of kind hotkey", new KeyboardShortcut(KeyCode.A, KeyCode.LeftControl),
+				Hotkey = config.Bind("10. Select all of kind", "1. Select all of kind hotkey", new KeyboardShortcut(KeyCode.A, KeyCode.LeftControl),
 					"Needs UI Fixes with Multiselect on. Hover ammo, a throwable (any grenade, flashbang or smoke) or a dog tag and press this to select every item of that whole category in the container: all ammo whatever the caliber, all throwables whatever the type, all dog tags whatever the side. UI Fixes' own select-all key (same exact item only) is untouched. Unassign the key to turn the feature off. If both keys are the same, this one wins.");
 				new Patch().Enable();
 				Plugin.Verbose("Select all of kind: hooked into UI Fixes' multiselect.");
