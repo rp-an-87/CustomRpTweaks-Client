@@ -422,7 +422,7 @@ namespace CustomRpTweaks.Client
 			if (have.Count > 0)
 			{
 				// One line per requirement, so a long list stays readable
-				yield return Note("<b>You have:</b>\n" + string.Join("\n", have));
+				yield return TooltipSeparators.Line(HotkeyHints.SeparatorLength) + "\n" + Note("<b>You have:</b>\n" + string.Join("\n", have));
 			}
 
 			if (!src.UnbuyableBlocks)
@@ -667,17 +667,31 @@ namespace CustomRpTweaks.Client
 			return true;
 		}
 
-		// The offers for one item that can be bought right now: other players' offers for roubles, dollars or euro, found by the game's own search
+		// What the flea market screen asks before it lets you press Purchase on a trader's offer: the trader is unlocked and not disabled,
+		// your loyalty level with them is enough, and the offer isn't locked or used up (your buy limit)
+		private static bool TraderAllows(Profile profile, Offer offer)
+		{
+			if (offer.LimitsReached || offer.Locked)
+			{
+				return false;
+			}
+
+			return profile.TradersInfo.TryGetValue(offer.User.Id, out var trader) && trader.Available && !trader.Disabled && trader.LoyaltyLevel >= offer.LoyaltyLevel;
+		}
+
+		// The offers for one item that can be bought right now: other players' and traders' offers for roubles, dollars or euro, found by the game's own search
 		private static async Task<List<Offer>> FindOffers(RagFair ragfair, Profile profile, IExchangeRequirement requirement)
 		{
 			var found = new List<Offer>();
 			var session = ragfair._tradingSession;
 			var delay = Singleton<GlobalConfiguration>.Instance.RagFair.delaySinceOfferAdd;
 			var me = profile.Id.ToString();
+			var withTraders = Plugin.QuickBuyTraders.Value;
 
 			for (var page = 0; page < MaxPages; page++)
 			{
-				var response = await session.GetOffers(page, PageSize, (int)ESortType.Price, false, 0, 0, 0, 0, 0, 0, 100, false, true, (int)EOfferOwnerType.PlayerOwnerType,
+				var response = await session.GetOffers(page, PageSize, (int)ESortType.Price, false, 0, 0, 0, 0, 0, 0, 100, false, true,
+					(int)(withTraders ? EOfferOwnerType.AnyOwnerType : EOfferOwnerType.PlayerOwnerType),
 					true, requirement.TemplateId, string.Empty, string.Empty, new Dictionary<string, int>(), 0, false);
 				if (response.Failed || response.Value == null || response.Value.offers == null)
 				{
@@ -687,10 +701,19 @@ namespace CustomRpTweaks.Client
 				foreach (var candidate in response.Value.offers)
 				{
 					if (candidate != null && !candidate.NotAvailable && candidate.CanBeBought && !candidate.Locked && candidate.CurrentItemCount > 0 && candidate.OnlyMoney
-						&& Array.IndexOf(Currencies, candidate.MoneyType) >= 0 && candidate.MemberType != EMemberCategory.Trader && candidate.User != null && candidate.User.Id.ToString() != me
-						&& (DateTimeExtensions.UtcNow - candidate.StartTime).TotalSeconds >= delay && candidate.Item != null && candidate.Item.StringTemplateId == requirement.TemplateId)
+						&& Array.IndexOf(Currencies, candidate.MoneyType) >= 0 && candidate.User != null && candidate.Item != null && candidate.Item.StringTemplateId == requirement.TemplateId)
 					{
-						found.Add(candidate);
+						if (candidate.MemberType == EMemberCategory.Trader)
+						{
+							if (withTraders && TraderAllows(profile, candidate))
+							{
+								found.Add(candidate);
+							}
+						}
+						else if (candidate.User.Id.ToString() != me && (DateTimeExtensions.UtcNow - candidate.StartTime).TotalSeconds >= delay)
+						{
+							found.Add(candidate);
+						}
 					}
 				}
 

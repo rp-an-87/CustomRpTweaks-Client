@@ -53,6 +53,7 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<QuickBuyMode> FleaBarterBuyMode;
 		internal static ConfigEntry<bool> FleaBarterBuyComplete;
 		internal static ConfigEntry<bool> FleaBarterBuyButtons;
+		internal static ConfigEntry<bool> QuickBuyTraders;
 		internal static ConfigEntry<bool> TaskSearchBox;
 		internal static ConfigEntry<bool> BtrCannonCam;
 		internal static ConfigEntry<float> BtrCannonCamDistance;
@@ -212,7 +213,7 @@ namespace CustomRpTweaks.Client
 				new ConfigDescription("How many rows, counting from the top of the stash, to keep free when sorting.", new AcceptableValueRange<int>(1, 50)));
 
 			HideoutQuickBuy = Config.Bind("02. Hideout", "1. Buy craft materials with the buy button", true,
-				"The flea market buy button of a craft buys everything the craft needs, the cheapest offers first (other players' offers: roubles first, then US dollar and euro offers only for what the roubles can't cover and only with the money you hold; a pack sold in one piece only whole). Hover the button: the tooltip shows what it would buy and cost, and whether it can be done at all. Nothing is bought unless every item can be had and you hold the money. Money, dog tags and found-in-raid requirements are not for sale: they are used from the stash. Tools (the wrench-marked requirements) follow the setting below. There is no confirmation: the click buys, starting the craft is still up to you. Off: the game's own button (a flea market search).");
+				"The flea market buy button of a craft buys everything the craft needs, the cheapest offers first (flea market offers, other players' and traders': roubles first, then US dollar and euro offers only for what the roubles can't cover and only with the money you hold; a pack sold in one piece only whole). Hover the button: the tooltip shows what it would buy and cost, and whether it can be done at all. Nothing is bought unless every item can be had and you hold the money. Money, dog tags and found-in-raid requirements are not for sale: they are used from the stash. Tools (the wrench-marked requirements) follow the setting below. There is no confirmation: the click buys, starting the craft is still up to you. Off: the game's own button (a flea market search).");
 			HideoutBuyMode = Config.Bind("02. Hideout", "2. Craft buy mode", QuickBuyMode.BuyMissingNoFir,
 				"What the buy button buys. Buy all: everything the craft asks for, whatever you hold. Buy missing: only what you don't hold. Buy missing, found-in-raid items don't count: like Buy missing, but your found-in-raid items are not counted as held, so they are kept (the craft takes items that are not found in raid first).");
 			HideoutBuyTools = Config.Bind("02. Hideout", "3. Buy missing tools too", true,
@@ -233,13 +234,15 @@ namespace CustomRpTweaks.Client
 			new FleaOfferTimerPatch().Enable();
 
 			FleaBarterBuyMenu = Config.Bind("01. Flea market", "2. Quick buy entries for barter offers", true,
-				"In the item menu beside a flea market barter offer (Inspect, Filter by item, ...) an entry Buy & fulfil is added: it buys the items the barter asks for (what exactly is set in 'Quick buy mode'), the cheapest offers first (other players' offers: roubles first, then US dollar and euro offers only for what the roubles can't cover and only with the money you hold; a pack sold in one piece only whole), then buys the barter with them. Nothing is bought unless every item can be had and you hold the money (trader offers and dog tags are not used; no currency exchange). There is no confirmation: the click buys. Takes effect the next time the offer's menu is built.");
+				"In the item menu beside a flea market barter offer (Inspect, Filter by item, ...) an entry Buy & fulfil is added: it buys the items the barter asks for (what exactly is set in 'Quick buy mode'), the cheapest offers first (flea market offers, other players' and traders': roubles first, then US dollar and euro offers only for what the roubles can't cover and only with the money you hold; a pack sold in one piece only whole), then buys the barter with them. Nothing is bought unless every item can be had and you hold the money (dog tags are not used; no currency exchange). There is no confirmation: the click buys. Takes effect the next time the offer's menu is built.");
 			FleaBarterBuyMode = Config.Bind("01. Flea market", "3. Quick buy mode", QuickBuyMode.BuyMissingNoFir,
 				"What Buy & fulfil buys. Buy all: every item the barter asks for, whatever you hold. Buy missing: only what you don't hold. Buy missing, found-in-raid items don't count: like Buy missing, but the found-in-raid items you hold are not counted as held, so they are kept (the game hands in items that are not found in raid first, so the barter takes the bought ones).");
 			FleaBarterBuyComplete = Config.Bind("01. Flea market", "4. Quick buy also buys the barter", true,
 				"On: once the items are bought, the barter offer itself is bought with them. Off: only the items are bought, you complete the barter yourself.");
 			FleaBarterBuyButtons = Config.Bind("01. Flea market", "5. Quick buy buttons under the barter price", true,
 				"A small Buy & fulfil button under the price of a flea market barter offer, the same as the menu entry. Hover it: the tooltip shows what it would buy and cost from the current offers, and whether you hold the money. Takes effect the next time the offers are drawn.");
+			QuickBuyTraders = Config.Bind("01. Flea market", "6. Quick buy also uses trader offers", true,
+				"The quick buy (barter button, menu entry and the hideout craft buy button) also buys from the traders' offers on the flea market, not only from other players, whichever is cheapest. Ammo, for one, is mostly sold by traders. A trader's offer is only used if you could press Purchase on it yourself: the trader is unlocked, your loyalty level is high enough and you have not used up your buy limit. Off: other players' offers only.");
 			new FleaBarterBuyMenuPatch().Enable();
 			new FleaBarterBuyButtonsPatch().Enable();
 
