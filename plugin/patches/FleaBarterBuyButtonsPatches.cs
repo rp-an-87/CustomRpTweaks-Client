@@ -11,7 +11,7 @@ using UnityEngine.UI;
 
 namespace CustomRpTweaks.Client
 {
-	// Two small buttons (Buy missing, Buy all) under the price of a flea market barter offer, below "per item": the same quick buy as the menu
+	// A small button (Buy & fulfil) under the price of a flea market barter offer, below "per item": the same quick buy as the menu
 	// entries. Hovering one shows what it would cost from the current offers. The row is made once per price panel and reused when the offer
 	// changes; it is hidden for offers it doesn't belong on.
 	internal static class FleaBarterBuyButtons
@@ -45,19 +45,22 @@ namespace CustomRpTweaks.Client
 
 			var row = existing != null ? existing : Build(price, label, parent);
 			row.gameObject.SetActive(true);
-			Bind(row.GetChild(0), ragfair, offer, FleaBarterBuy.Mode.Missing);
-			Bind(row.GetChild(1), ragfair, offer, FleaBarterBuy.Mode.All);
+			Bind(row.GetChild(0), ragfair, offer);
 		}
 
-		private static void Bind(Transform button, RagFair ragfair, Offer offer, FleaBarterBuy.Mode mode)
+		private static void Bind(Transform button, RagFair ragfair, Offer offer)
 		{
 			var click = button.GetComponent<Button>();
 			click.onClick.RemoveAllListeners();
-			click.onClick.AddListener(() => FleaBarterBuy.Start(ragfair, offer, mode));
+			click.onClick.AddListener(() => FleaBarterBuy.Start(ragfair, offer));
 			var hover = button.GetComponent<QuoteHover>();
 			hover.Ragfair = ragfair;
 			hover.Offer = offer;
-			hover.Mode = mode;
+			var caption = button.GetComponentInChildren<TextMeshProUGUI>(true);
+			if (caption != null)
+			{
+				caption.text = FleaBarterBuy.ButtonText.ToUpperInvariant();
+			}
 		}
 
 		private static Transform Build(OfferItemPrice price, TextMeshProUGUI label, Transform parent)
@@ -78,8 +81,7 @@ namespace CustomRpTweaks.Client
 			placer.Label = (RectTransform)label.transform;
 			placer.View = price.GetComponentInParent<OfferView>();
 
-			MakeButton(row.transform, "BUY MISSING", label);
-			MakeButton(row.transform, "BUY ALL", label);
+			MakeButton(row.transform, FleaBarterBuy.ButtonText.ToUpperInvariant(), label);
 			return row.transform;
 		}
 
@@ -122,7 +124,7 @@ namespace CustomRpTweaks.Client
 	// space so it doesn't depend on how the game anchors its panels.
 	internal class QuickBuyRow : MonoBehaviour
 	{
-		internal const float Width = 150f;
+		internal const float Width = 96f;
 		internal const float Height = 14f;
 
 		public RectTransform Label;
@@ -163,7 +165,6 @@ namespace CustomRpTweaks.Client
 
 		public RagFair Ragfair;
 		public Offer Offer;
-		public FleaBarterBuy.Mode Mode;
 		private int _hover;
 
 		public async void OnPointerEnter(PointerEventData eventData)
@@ -175,7 +176,7 @@ namespace CustomRpTweaks.Client
 				return;
 			}
 
-			var key = Offer.Id + ":" + Mode;
+			var key = Offer.Id + ":" + Plugin.FleaBarterBuyMode.Value;
 			if (Cache.TryGetValue(key, out var cached) && Time.realtimeSinceStartup - cached.Key < 20f)
 			{
 				tooltip.Show(cached.Value, null, 0f, 420f);
@@ -186,7 +187,7 @@ namespace CustomRpTweaks.Client
 			string text;
 			try
 			{
-				text = await FleaBarterBuy.Quote(Ragfair, Offer, Mode);
+				text = await FleaBarterBuy.Quote(Ragfair, Offer);
 				Cache[key] = new KeyValuePair<float, string>(Time.realtimeSinceStartup, text);
 			}
 			catch (Exception e)

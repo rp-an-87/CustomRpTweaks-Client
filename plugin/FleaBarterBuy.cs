@@ -15,14 +15,29 @@ using SPT.Reflection.Patching;
 
 namespace CustomRpTweaks.Client
 {
+	internal enum QuickBuyMode
+	{
+		[System.ComponentModel.Description("Buy all")]
+		BuyAll,
+
+		[System.ComponentModel.Description("Buy missing")]
+		BuyMissing,
+
+		[System.ComponentModel.Description("Buy missing, found-in-raid items don't count")]
+		BuyMissingNoFir
+	}
+
 	// "Quick buy missing" / "Quick buy all" / "Barter cost" in the item menu of a flea market barter offer (the buttons beside the offer:
 	// Inspect, Filter by item, ...). For every item the barter asks for, the cheapest player offers for roubles are bought (the game's own
 	// search, sorted by price, and the game's own purchase request), then the barter itself is bought with those items. Everything is
 	// worked out first and nothing is bought unless every item can be had and the roubles are there.
 	internal static class FleaBarterBuy
 	{
-		internal const string MissingKey = "Quick buy missing";
-		internal const string AllKey = "Quick buy all";
+		internal static string ButtonText => Plugin.FleaBarterBuyComplete.Value ? "Buy & fulfil" : "Buy items";
+
+		// What the button buys, from the setting: everything the barter asks for, or only what you don't hold (found-in-raid items counted as held or not)
+		internal static Mode CurrentMode => Plugin.FleaBarterBuyMode.Value == QuickBuyMode.BuyAll ? Mode.All : Mode.Missing;
+		internal static bool FirAsMissing => Plugin.FleaBarterBuyMode.Value == QuickBuyMode.BuyMissingNoFir;
 
 		internal enum Mode { Missing, All }
 
@@ -111,15 +126,15 @@ namespace CustomRpTweaks.Client
 			}
 
 			var offer = FindOffer(ragfair, itemContext.Item);
-			interactions.RemoveDynamicInteraction(MissingKey);
-			interactions.RemoveDynamicInteraction(AllKey);
+			// The label depends on a setting: both are taken out
+			interactions.RemoveDynamicInteraction("Buy & fulfil");
+			interactions.RemoveDynamicInteraction("Buy items");
 			if (offer == null || offer.NotAvailable || offer.OnlyMoney || offer.Requirements == null || offer.Requirements.Length == 0 || ragfair.Disabled)
 			{
 				return;
 			}
 
-			HandIn.AddDynamic.Invoke(interactions, new object[] { MissingKey, MissingKey, (Action)(() => Start(ragfair, offer, Mode.Missing)), null });
-			HandIn.AddDynamic.Invoke(interactions, new object[] { AllKey, AllKey, (Action)(() => Start(ragfair, offer, Mode.All)), null });
+			HandIn.AddDynamic.Invoke(interactions, new object[] { ButtonText, ButtonText, (Action)(() => Start(ragfair, offer)), null });
 		}
 
 		private static Offer FindOffer(RagFair ragfair, Item item)
@@ -135,7 +150,7 @@ namespace CustomRpTweaks.Client
 			return null;
 		}
 
-		internal static async void Start(RagFair ragfair, Offer offer, Mode mode)
+		internal static async void Start(RagFair ragfair, Offer offer)
 		{
 			if (_running)
 			{
@@ -146,7 +161,7 @@ namespace CustomRpTweaks.Client
 			_running = true;
 			try
 			{
-				await Run(ragfair, offer, mode);
+				await Run(ragfair, offer, CurrentMode);
 			}
 			catch (Exception e)
 			{
@@ -271,7 +286,7 @@ namespace CustomRpTweaks.Client
 		// Found-in-raid items that are held but won't go into a quick buy missing
 		private static IEnumerable<string> FirNotes(Plan plan, Mode mode)
 		{
-			if (mode != Mode.Missing || !Plugin.FleaBarterBuyFirAsMissing.Value)
+			if (mode != Mode.Missing || !FirAsMissing)
 			{
 				yield break;
 			}
@@ -284,8 +299,9 @@ namespace CustomRpTweaks.Client
 		}
 
 		// The tooltip of a button, from the offers as they are now
-		internal static async Task<string> Quote(RagFair ragfair, Offer offer, Mode mode)
+		internal static async Task<string> Quote(RagFair ragfair, Offer offer)
 		{
+			var mode = CurrentMode;
 			var profile = ragfair._tradingSession.Profile;
 			var search = new Dictionary<string, List<Offer>>();
 			var plan = await MakePlan(ragfair, profile, offer, mode, search, null);
@@ -388,7 +404,7 @@ namespace CustomRpTweaks.Client
 				plan.Needs.Add(need);
 
 				need.FirHeld = Candidates(stash, requirement, true).Where(item => item.MarkedAsSpawnedInSession).Sum(item => item.StackObjectsCount);
-				var owned = Candidates(stash, requirement, mode == Mode.All || !Plugin.FleaBarterBuyFirAsMissing.Value).Sum(item => item.StackObjectsCount);
+				var owned = Candidates(stash, requirement, mode == Mode.All || !FirAsMissing).Sum(item => item.StackObjectsCount);
 				need.Owned = owned;
 				need.ToBuy = mode == Mode.All ? need.Required : Math.Max(0, need.Required - owned);
 				if (need.ToBuy <= 0)
