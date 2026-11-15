@@ -5,6 +5,8 @@ using UnityEngine;
 using UnityEngine.UI;
 using EFT.InventoryLogic;
 using EFT.UI;
+using Comfort.Common;
+using EFT.Utilities;
 using SPT.Reflection.Patching;
 
 namespace CustomRpTweaks.Client.Patches
@@ -49,6 +51,12 @@ namespace CustomRpTweaks.Client.Patches
 					}
 
 					button.SetSiblingIndex(firstButtonIndex == int.MaxValue ? 0 : firstButtonIndex);
+
+					// A quest wants the item but it can't go as it is: greyed out, the reason is the tooltip (as Empty's "Nothing in it")
+					if (HandIn.Blocked.TryGetValue(interaction.Key, out var reason))
+					{
+						button.GetComponent<SimpleContextMenuButton>()?.SetButtonInteraction(new FailedResult(reason, 0));
+					}
 					foreach (var text in button.GetComponentsInChildren<TMP_Text>(true))
 					{
 						text.color = HandIn.Yellow;

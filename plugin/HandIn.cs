@@ -50,6 +50,9 @@ namespace CustomRpTweaks.Client
 
 		private static bool _running;
 
+		// Button label -> why it is greyed out, for the buttons of the menu being built
+		internal static readonly Dictionary<string, string> Blocked = new Dictionary<string, string>();
+
 		private static QuestController QuestControllerOf(ItemUiContext uiContext) => uiContext == null ? null : QuestControllerField.GetValue(uiContext) as QuestController;
 
 		// One objective that takes the item: the quest, its condition, and how many of the item it still wants
@@ -60,14 +63,49 @@ namespace CustomRpTweaks.Client
 			public int Remaining;
 		}
 
+		// Why the game's hand-over window would not take this item, or null. It only lets you pick items that are empty (no ammo in a
+		// magazine, nothing in a case, no mods on a weapon) and not locked; quest items and money skip the window and are always taken.
+		internal static string Refusal(Item item)
+		{
+			if (item.PinLockState == EItemPinLockState.Locked)
+			{
+				return "It is locked. Unlock it first.";
+			}
+
+			if (!(item.QuestItem || CurrencyUtil.IsCurrencyId(item.TemplateId) || item.IsEmpty()))
+			{
+				return "It has items inside (ammo, mods or contents). Empty it first.";
+			}
+
+			return null;
+		}
+
+		// The quests that still want this item's template (started, objective not done), whatever the item's state: for the greyed-out button
+		internal static List<string> Wanting(QuestController questController, Item item)
+		{
+			var names = new List<string>();
+			foreach (var candidate in questController.Quests)
+			{
+				if (candidate.QuestStatus != EQuestStatus.Started || !candidate.Conditions.TryGetValue(EQuestStatus.AvailableForFinish, out var conditions))
+				{
+					continue;
+				}
+
+				if (conditions.Any(entry => entry is ConditionHandoverItem handover && !candidate.IsConditionDone(handover) && handover.target.Contains(item.StringTemplateId)))
+				{
+					names.Add(candidate.Template.Name.Localized());
+				}
+			}
+
+			return names;
+		}
+
 		// Every objective of a started quest that takes this item whole (usually none or one)
 		internal static List<Target> FindAll(QuestController questController, Inventory inventory, Item item)
 		{
 			var found = new List<Target>();
 
-			// The game's hand-over window only lets you pick items that are empty (no ammo in a magazine, nothing in a case, no mods on
-			// a weapon) and not locked; quest items and money skip the window and are always taken
-			if (item.PinLockState == EItemPinLockState.Locked || !(item.QuestItem || CurrencyUtil.IsCurrencyId(item.TemplateId) || item.IsEmpty()))
+			if (Refusal(item) != null)
 			{
 				return found;
 			}
@@ -128,6 +166,22 @@ namespace CustomRpTweaks.Client
 
 			// One button, or "Hand in: quest name" for each when several quests want it. Each new button goes to the top, so they are added
 			// last to first.
+			var refusal = Refusal(item);
+			if (refusal != null)
+			{
+				// A quest wants it but the item can't go as it is: the button is there, greyed out, and says why
+				var wanting = Wanting(questController, item);
+				for (var i = wanting.Count - 1; i >= 0; i--)
+				{
+					var label = wanting.Count == 1 ? MenuKey : $"{MenuKey}: {wanting[i]}";
+					interactions.RemoveDynamicInteraction(label);
+					Blocked[label] = $"{wanting[i]} wants this, but it can't be handed in as it is. {refusal}";
+					AddDynamic.Invoke(interactions, new object[] { MenuId, label, (Action)(() => { }), QuestIcon() });
+				}
+
+				return;
+			}
+
 			var targets = FindAll(questController, inventoryController.Inventory, item);
 			for (var i = targets.Count - 1; i >= 0; i--)
 			{
