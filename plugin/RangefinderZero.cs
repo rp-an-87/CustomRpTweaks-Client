@@ -17,6 +17,7 @@ namespace CustomRpTweaks.Client
 	{
 		private static float _reading = -1f;
 		private static float _readingAt;
+		private static TacticalRangeFinderController _source;
 
 		// The display shows "0437" or "437.5", with markup around the digits (and "----" when nothing is hit)
 		private static readonly Regex Number = new Regex(@"\d+(\.\d+)?", RegexOptions.Compiled);
@@ -30,11 +31,25 @@ namespace CustomRpTweaks.Client
 			{
 				_reading = metres;
 				_readingAt = Time.realtimeSinceStartup;
+				_source = controller;
 			}
 			else
 			{
 				_reading = -1f;
 			}
+		}
+
+		// The display that gave the reading is still on: its object is active, and a rangefinder built into a tactical device (the RAPTAR) has
+		// that device switched on
+		private static bool SourceIsOn()
+		{
+			if (_source == null || !_source.isActiveAndEnabled)
+			{
+				return false;
+			}
+
+			var device = _source.GetComponentInParent<TacticalComboVisualController>();
+			return device == null || device.LightMod == null || device.LightMod.IsActive;
 		}
 
 		private static void Say(string message) => NotificationManager.DisplayMessageNotification("Zero from rangefinder: " + message);
@@ -50,6 +65,12 @@ namespace CustomRpTweaks.Client
 			var animation = player == null ? null : player.ProceduralWeaponAnimation;
 			if (animation == null)
 			{
+				return;
+			}
+
+			if (_reading >= 0f && !SourceIsOn())
+			{
+				Say("the rangefinder is off.");
 				return;
 			}
 
