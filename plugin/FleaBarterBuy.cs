@@ -242,11 +242,15 @@ namespace CustomRpTweaks.Client
 			}
 		}
 
-		internal static async void Start(RagFair ragfair, Offer offer) => await Guard(() => Run(ragfair, BarterSource(ragfair, offer)));
+		internal static async void Start(RagFair ragfair, Offer offer) => await Guard(async () => await Run(ragfair, BarterSource(ragfair, offer)));
 
-		internal static async void StartHideout(ProduceView view) => await Guard(() => Run(RagfairOf(view), HideoutSource(view)));
+		// Another feature's quick buy (the weapon builds) goes through the same one-at-a-time guard
+		internal static async void RunGuarded(Func<Task> work) => await Guard(work);
 
-		private static async Task Run(RagFair ragfair, Source src)
+		internal static async void StartHideout(ProduceView view) => await Guard(async () => await Run(RagfairOf(view), HideoutSource(view)));
+
+		// True when everything it needed is bought (or nothing needed buying); false when nothing was, or it stopped half way
+		internal static async Task<bool> Run(RagFair ragfair, Source src)
 		{
 			var offer = src.Offer;
 			var profile = ragfair._tradingSession.Profile;
@@ -256,7 +260,7 @@ namespace CustomRpTweaks.Client
 			if (offer != null && (!offer.CanBeBought || offer.IsOutOfStockNow()))
 			{
 				Notify("Quick buy: this offer can't be bought right now.");
-				return;
+				return false;
 			}
 
 			// Everything is worked out first: nothing is bought unless all of it can be had and paid for
@@ -264,7 +268,7 @@ namespace CustomRpTweaks.Client
 			if (plan.Problems.Count > 0)
 			{
 				Notify("Quick buy: nothing bought. " + string.Join(" ", plan.Problems));
-				return;
+				return false;
 			}
 
 			var stash = inventory.Stash.GetAllItemsFromCollection().ToList();
@@ -291,7 +295,7 @@ namespace CustomRpTweaks.Client
 				if (!result.Succeed)
 				{
 					Notify($"Quick buy: the flea market refused the purchase (code {result.ErrorCode}), the offers have probably changed. Try again.");
-					return;
+					return false;
 				}
 
 				// The game's own sound of a completed trade
@@ -321,7 +325,7 @@ namespace CustomRpTweaks.Client
 			if (offer == null || !Plugin.FleaBarterBuyComplete.Value)
 			{
 				Notify("Quick buy: " + summary + ".");
-				return;
+				return true;
 			}
 
 			// The items should be in the stash as the purchase returns; give the game a moment if not
@@ -341,20 +345,21 @@ namespace CustomRpTweaks.Client
 			if (handover == null)
 			{
 				Notify("Quick buy: " + summary + ", but the items are not all in your stash, so the barter was not bought.");
-				return;
+				return false;
 			}
 
 			var screen = UnityEngine.Object.FindObjectOfType<RagfairScreen>();
 			if (screen == null)
 			{
 				Notify("Quick buy: " + summary + ", but the flea market screen is gone, so the barter was not bought.");
-				return;
+				return false;
 			}
 
 			var barter = new CommoditiesToPurchase();
 			barter.Add(new CommodityToPurchase(offer, offer.SellInOnePiece ? offer.Quantity : 1, handover));
 			Notify("Quick buy: " + summary + ", buying the barter.");
 			await screen.PerformPurchase(barter);
+			return true;
 		}
 		private static bool IsOutOfStockNow(this Offer offer) => offer.TotalItemCount <= 0;
 

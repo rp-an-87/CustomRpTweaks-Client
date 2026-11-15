@@ -29,7 +29,7 @@ namespace CustomRpTweaks.Client
 		private static readonly Dictionary<string, CompoundItem> Pending = new Dictionary<string, CompoundItem>();
 
 		// The buttons of the menu being built that others are placed by (what the game made: Open, Disassemble, the last of its own) and ours
-		private static SimpleContextMenuButton _open, _modding, _disassemble, _lastBuiltIn, _dismantleButton, _emptyButton;
+		private static SimpleContextMenuButton _open, _modding, _disassemble, _lastBuiltIn, _dismantleButton, _emptyButton, _editBuild, _buildButton;
 
 		internal static Sprite IconOf(string name)
 		{
@@ -46,7 +46,7 @@ namespace CustomRpTweaks.Client
 		// Called when the game makes the interactions of an item: adds our entries
 		internal static void Add(ItemUiContext uiContext, ItemContext itemContext, ContextInteractions<EItemInfoButton> interactions)
 		{
-			if (!Plugin.ContextMenuEntries.Value || HandIn.AddDynamic == null || interactions == null)
+			if ((!Plugin.ContextMenuEntries.Value && !Plugin.BuildMenu.Value) || HandIn.AddDynamic == null || interactions == null)
 			{
 				return;
 			}
@@ -60,9 +60,22 @@ namespace CustomRpTweaks.Client
 			// The game may hand out the same interactions again: the old entry goes first
 			interactions.RemoveDynamicInteraction(DismantleKey);
 			interactions.RemoveDynamicInteraction(EmptyKey);
+			interactions.RemoveDynamicInteraction(WeaponBuildBuy.Key);
 
 			var controller = Dismantle.ControllerOf(uiContext);
 			if (controller == null)
+			{
+				return;
+			}
+
+			if (Plugin.BuildMenu.Value && item is Weapon buildWeapon)
+			{
+				var buildId = WeaponBuildBuy.Key + ":" + item.Id;
+				Pending[buildId] = item;
+				HandIn.AddDynamic.Invoke(interactions, new object[] { buildId, WeaponBuildBuy.Key, null, IconOf("Modding") });
+			}
+
+			if (!Plugin.ContextMenuEntries.Value)
 			{
 				return;
 			}
@@ -86,7 +99,7 @@ namespace CustomRpTweaks.Client
 		}
 
 		private static bool IsOurs(DynamicContextInteraction interaction) =>
-			interaction != null && interaction.Id != null && (interaction.Key == DismantleKey || interaction.Key == EmptyKey) && interaction.Id.StartsWith(interaction.Key + ":");
+			interaction != null && interaction.Id != null && (interaction.Key == DismantleKey || interaction.Key == EmptyKey || interaction.Key == WeaponBuildBuy.Key) && interaction.Id.StartsWith(interaction.Key + ":");
 
 		// The game made a button of its own: remember the ones we place ours by
 		internal static void Track(string key, SimpleContextMenuButton button)
@@ -107,6 +120,11 @@ namespace CustomRpTweaks.Client
 			else if (key == nameof(EItemInfoButton.Disassemble))
 			{
 				_disassemble = button;
+			}
+
+			if (key == nameof(EItemInfoButton.EditBuild))
+			{
+				_editBuild = button;
 			}
 
 			// The game's own buttons are named by the enum; the dynamic ones (ours, Hand in) are not
@@ -137,6 +155,49 @@ namespace CustomRpTweaks.Client
 			_dismantleButton = button;
 		}
 
+		// Our Build button: with the arrow and the submenu of saved builds; greyed out, with the reason, when it can't be used
+		internal static void CreateBuild(InteractionButtonsContainer container, DynamicContextInteraction interaction)
+		{
+			if (!Pending.TryGetValue(interaction.Id, out var item) || !(item is Weapon weapon))
+			{
+				return;
+			}
+
+			SimpleContextMenuButton button = null;
+			Action open = () =>
+			{
+				SubMenuButtonField?.SetValue(container, button);
+				container.CloseSubMenu();
+				container.SetSubInteractions(new BuildActions(ItemUiContext.Instance, weapon));
+			};
+			button = container._buttonsContainer == null ? null : container.CreateContextButton(interaction.Key, interaction.Key, container._buttonTemplate, container._buttonsContainer, interaction.Icon, open, open, true, false);
+			if (button == null)
+			{
+				return;
+			}
+
+			var reason = WeaponBuildBuy.Unavailable(Dismantle.ControllerOf(ItemUiContext.Instance), weapon, WeaponBuildBuy.PresetsFor(weapon).Count);
+			button.SetButtonInteraction(reason == null ? SuccessfulResult.New : (IResult)new FailedResult(reason, 0));
+			container.BindButton(button);
+			_buildButton = button;
+		}
+
+		private static void PlaceBuild(InteractionButtonsContainer container)
+		{
+			var transform = Alive(container, _buildButton);
+			if (transform == null)
+			{
+				return;
+			}
+
+			// Right under Edit build
+			var anchor = Alive(container, _editBuild) ?? Alive(container, _modding) ?? Alive(container, _lastBuiltIn);
+			if (anchor != null)
+			{
+				transform.SetSiblingIndex(anchor.GetSiblingIndex() + 1);
+			}
+		}
+
 		private static void Open(InteractionButtonsContainer container, SimpleContextMenuButton button, CompoundItem item)
 		{
 			SubMenuButtonField?.SetValue(container, button);
@@ -154,6 +215,12 @@ namespace CustomRpTweaks.Client
 			var parent = container._buttonsContainer;
 			if (parent == null)
 			{
+				return;
+			}
+
+			if (interaction.Key == WeaponBuildBuy.Key)
+			{
+				PlaceBuild(container);
 				return;
 			}
 
@@ -358,6 +425,20 @@ namespace CustomRpTweaks.Client
 		[PatchPrefix]
 		private static bool Prefix(InteractionButtonsContainer __instance, DynamicContextInteraction interaction)
 		{
+			if (ItemMenu.IsOurEntry(__instance == null ? null : interaction) && interaction.Key == WeaponBuildBuy.Key)
+			{
+				try
+				{
+					ItemMenu.CreateBuild(__instance, interaction);
+					return false;
+				}
+				catch (Exception e)
+				{
+					Plugin.Log.LogError($"Build menu button failed: {e}");
+					return true;
+				}
+			}
+
 			// Only a weapon's Dismantle has a submenu; the rest are the game's plain buttons
 			if (!ItemMenu.IsOurEntry(interaction) || interaction.Key != ItemMenu.DismantleKey || !ItemMenu.IsWeaponEntry(interaction))
 			{
@@ -409,6 +490,25 @@ namespace CustomRpTweaks.Client
 			catch (Exception e)
 			{
 				Plugin.Log.LogError($"Item menu tracking failed: {e}");
+			}
+		}
+	}
+
+	// The same for the submenu of Build
+	internal class ItemMenuBuildSidePatch : ModulePatch
+	{
+		protected override MethodBase GetTargetMethod() => typeof(InteractionButtonsContainer).GetMethod(nameof(InteractionButtonsContainer.SetSubInteractions), BindingFlags.Instance | BindingFlags.Public).MakeGenericMethod(typeof(EBuildPreset));
+
+		[PatchPostfix]
+		private static void Postfix(InteractionButtonsContainer __instance)
+		{
+			try
+			{
+				ItemMenu.KeepRight(__instance);
+			}
+			catch (Exception e)
+			{
+				Plugin.Log.LogError($"Item menu side failed: {e}");
 			}
 		}
 	}
