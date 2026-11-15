@@ -47,6 +47,12 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<bool> HideoutFuelRefill;
 		internal static ConfigEntry<KeyboardShortcut> RangefinderZeroHotkey;
 		internal static ConfigEntry<float> RangefinderZeroMaxAge;
+		internal static ConfigEntry<bool> BipodRelax;
+		internal static ConfigEntry<bool> BipodAnySurface;
+		internal static ConfigEntry<float> BipodClearance;
+		internal static ConfigEntry<float> BipodExtraReach;
+		internal static ConfigEntry<float> BipodLedgeReach;
+		internal static ConfigEntry<float> BipodMinFlatness;
 		internal static ConfigEntry<bool> KeepTopRowsFree;
 		internal static ConfigEntry<int> TopRowsToKeepFree;
 		internal static ConfigEntry<bool> KeepSpeedWhileZooming;
@@ -231,6 +237,19 @@ namespace CustomRpTweaks.Client
 				"While aiming through a sight, press this to set its zero to the distance your rangefinder last showed (the display on a weapon, such as the RAPTAR, or the handheld one), rounded to the nearest zero step the sight offers (half way between two goes to the longer one). It uses the game's own zeroing steps, so it only works while aiming. Unassign the key to turn the feature off.");
 			RangefinderZeroMaxAge = Config.Bind("19. Aiming", "3. Rangefinder reading stays valid for (seconds)", 30f,
 				new ConfigDescription("A rangefinder reading older than this is not used by the zero hotkey: aim the rangefinder at the target again. The display measures twice a second while it is on and in view.", new AcceptableValueRange<float>(1f, 600f)));
+			BipodRelax = Config.Bind("19. Aiming", "4. Relax deploying a bipod while prone", true,
+				"The game only lets you deploy a bipod prone on ground it counts very strictly: low-poly terrain, nothing within 20 cm of the spot, ground right under the bipod and nearly level. With this on, the search uses the settings below instead (the bipod then rests on what it finds, which may not look perfect). Off: the game's own rules. Takes effect on the next deploy.");
+			BipodAnySurface = Config.Bind("19. Aiming", "5. Bipod: other surfaces count as ground", true,
+				"Rocks, props and other solid objects count as ground, not only the terrain's low-poly collision (the game's rule).");
+			BipodClearance = Config.Bind("19. Aiming", "6. Bipod: clear space around the spot (m)", 0.1f,
+				new ConfigDescription("The game refuses when terrain is within this distance of the spot where the bipod would stand (20 cm). 0 turns the check off.", new AcceptableValueRange<float>(0f, 0.3f)));
+			BipodExtraReach = Config.Bind("19. Aiming", "7. Bipod: extra reach down (m)", 0.4f,
+				new ConfigDescription("How much further below the spot the ground is looked for, on top of the game's own reach (at most 40 cm). Helps when the ground drops away under the bipod.", new AcceptableValueRange<float>(0f, 1.5f)));
+			BipodLedgeReach = Config.Bind("19. Aiming", "8. Bipod: ledge reach back (m)", 0.3f,
+				new ConfigDescription("When there is no ground right under the bipod (the edge of a ledge or rock), the spots up to this far back toward you are tried too, and the bipod rests on the edge. 0 turns it off.", new AcceptableValueRange<float>(0f, 0.8f)));
+			BipodMinFlatness = Config.Bind("19. Aiming", "9. Bipod: how flat the ground must be", 0.7f,
+				new ConfigDescription("1 is level ground; the game wants 0.94 (about 20 degrees), the server's setting is 0.82 (about 35). 0.7 is about 45 degrees. The lower of this and the server's setting is used.", new AcceptableValueRange<float>(0.3f, 1f)));
+			new RelaxedProneBipodPatch().Enable();
 			new RangefinderReadingPatch().Enable();
 			new BipodDeployLogPatch().Enable();
 			new FuelRefillShowPatch().Enable();
