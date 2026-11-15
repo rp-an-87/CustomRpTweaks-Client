@@ -312,7 +312,7 @@ namespace CustomRpTweaks.Client
 				"On a weapon the game's own Disassemble button is hidden and Dismantle takes its place. Only when Dismantle is offered for that weapon (it has parts attached, and the in-raid setting allows it). Off: both are listed.");
 			BuildMenu = Config.Bind("12. Context menu", "3. Build entry on weapons", true,
 				"Right-click a weapon in the stash: a Build entry under Edit build lists the builds you saved for that weapon. Picking one buys the parts the stash doesn't hold (the quick buy: cheapest offers, traders' and players', any currency) and then assembles the weapon the way the workbench does; parts the build doesn't use stay in the stash. Greyed out, with the reason, when the workbench isn't built (the same condition as Edit build), in a raid or when there is no saved build. Takes effect the next time the menu opens.");
-			BuildHideDefaults = Config.Bind("12. Context menu", "4. Build entry hides the game's default builds", true,
+			BuildHideDefaults = Config.Bind("12. Context menu", "4. Build entry hides the default builds", true,
 				"The game lists its own preset builds beside yours. On: only the builds you saved are in the Build entry's list.");
 			BuildBorrow = Config.Bind("12. Context menu", "5. Build entry borrows parts from other weapons", false,
 				"On: parts the build needs that you don't hold loose can be taken off other weapons in your stash before anything is bought. Only parts in non-vital slots with nothing attached to them (never a magazine) are borrowed, so the other weapons lose, for instance, a sight or a grip. Off: those parts are bought.");
