@@ -16,7 +16,7 @@ using UnityEngine.UI;
 
 namespace CustomRpTweaks.Client
 {
-	// "Refill" on the generator's fuel slots: a button over a slot that is empty or whose fuel ran out. It buys one full fuel tank on the
+	// "Refill" on the generator's fuel slots (and the water collector's filter slot, which is the same kind of slot): a button over a slot that is empty or whose fuel ran out. It buys one full fuel tank on the
 	// flea market (traders' offers included, the cheapest full one) and puts it in the slot the way the slot's own dropdown would: the empty
 	// tank goes back to the stash, the new one takes its place.
 	// First it uses a tank that is already in the stash (any with fuel left: Metal before Expeditionary, the fullest first). Otherwise it buys, in order: a Metal fuel tank at a normal price, an Expeditionary fuel tank at a normal price, then (nothing is for sale at
@@ -27,14 +27,29 @@ namespace CustomRpTweaks.Client
 		private const string ButtonName = "RefillFuel";
 
 		// In order of preference
-		private static readonly string[] Tanks = { "5d1b36a186f7742523398433", "5d1b371186f774253763a656" };
-		private static readonly string[] TankNames = { "Metal fuel tank", "Expeditionary fuel tank" };
+		private static readonly string[] FuelTanks = { "5d1b36a186f7742523398433", "5d1b371186f774253763a656" };
+		private const string WaterFilter = "5d1b385e86f774252167b98a";
+
+		private static string NameOf(string id) => id == FuelTanks[0] ? "Metal fuel tank" : id == FuelTanks[1] ? "Expeditionary fuel tank" : id == WaterFilter ? "Water filter" : (id + " Name").Localized(null);
+
+		// What a slot takes, in order of preference: the generator's two kinds of tank, the water collector's filter. Null: not a slot this is for.
+		internal static string[] KindsFor(IConsumer consumer)
+		{
+			if (consumer is GeneratorBehaviour)
+			{
+				return FuelTanks;
+			}
+
+			var filters = consumer == null || consumer.Slots == null || consumer.Slots.Filters == null ? null : consumer.Slots.Filters.Select(id => id.ToString()).ToList();
+			return consumer is PermanentProducer && filters != null && filters.Contains(WaterFilter) ? new[] { WaterFilter } : null;
+		}
 
 		private class Choice
 		{
 			public Offer Offer;
 			public Item Stock;                                            // a tank from the stash, nothing is bought
 			public int Tank;
+			public string[] Kinds;
 			public long Price;
 			public long BasePrice;
 			public ECurrencyType Currency;
@@ -43,7 +58,7 @@ namespace CustomRpTweaks.Client
 			public string Problem;
 			public readonly List<string> Notes = new List<string>();      // why a tank that comes earlier in the order was not bought
 			public bool CanBuy => Offer != null || Stock != null;
-			public string Name => TankNames[Tank];
+			public string Name => NameOf(Kinds[Tank]);
 		}
 
 		private static RagFair RagfairNow()
@@ -76,11 +91,11 @@ namespace CustomRpTweaks.Client
 		}
 
 		// Tanks in the stash with fuel left: Metal before Expeditionary, the fullest first
-		private static Item StockedTank(List<Item> stash, out int tank)
+		private static Item StockedTank(List<Item> stash, string[] kinds, out int tank)
 		{
-			for (tank = 0; tank < Tanks.Length; tank++)
+			for (tank = 0; tank < kinds.Length; tank++)
 			{
-				var id = Tanks[tank];
+				var id = kinds[tank];
 				var found = stash.Where(item => item != null && item.StringTemplateId == id && FuelOf(item) > Mathf.Epsilon).OrderByDescending(FuelOf).FirstOrDefault();
 				if (found != null)
 				{
@@ -108,23 +123,23 @@ namespace CustomRpTweaks.Client
 
 		private static string OrangeHex => Plugin.PriceIndicatorNewColor != null && !string.IsNullOrEmpty(Plugin.PriceIndicatorNewColor.Value) ? Plugin.PriceIndicatorNewColor.Value : "#FF9A3C";
 
-		private static string WhyNot(int tank, List<Offer> normal, List<Offer> raised, Dictionary<ECurrencyType, long> wallet)
+		private static string WhyNot(string[] kinds, int tank, List<Offer> normal, List<Offer> raised, Dictionary<ECurrencyType, long> wallet)
 		{
 			if (normal.Count == 0)
 			{
-				return raised.Count == 0 ? $"No full {TankNames[tank]} for sale" : $"{TankNames[tank]} is only for sale at an overstock price";
+				return raised.Count == 0 ? $"No full {NameOf(kinds[tank])} for sale" : $"{NameOf(kinds[tank])} is only for sale at an overstock price";
 			}
 
 			var cheapest = normal[0];
 			var missing = PriceOf(cheapest) - wallet[cheapest.MoneyType];
-			return $"The cheapest {TankNames[tank]} costs {Money(cheapest.MoneyType, PriceOf(cheapest), false)} and you are short by {Money(cheapest.MoneyType, missing, false)}";
+			return $"The cheapest {NameOf(kinds[tank])} costs {Money(cheapest.MoneyType, PriceOf(cheapest), false)} and you are short by {Money(cheapest.MoneyType, missing, false)}";
 		}
 
-		private static Choice Made(Offer offer, int tank, bool overstock, List<string> notes, Dictionary<Offer, int> bases)
+		private static Choice Made(string[] kinds, Offer offer, int tank, bool overstock, List<string> notes, Dictionary<Offer, int> bases)
 		{
 			var choice = new Choice
 			{
-				Offer = offer, Tank = tank, Price = PriceOf(offer), Currency = offer.MoneyType, Capacity = CapacityOf(offer), Overstock = overstock,
+				Offer = offer, Kinds = kinds, Tank = tank, Price = PriceOf(offer), Currency = offer.MoneyType, Capacity = CapacityOf(offer), Overstock = overstock,
 				BasePrice = bases.TryGetValue(offer, out var basePrice) ? basePrice : PriceOf(offer)
 			};
 			choice.Notes.AddRange(notes);
@@ -133,25 +148,25 @@ namespace CustomRpTweaks.Client
 
 		// The cheapest full tank at a price you can pay, by the order in the header comment. Each tank's offers are split into those at a
 		// normal price and those the overstock raised.
-		private static async Task<Choice> Choose(RagFair ragfair, List<Item> stash)
+		private static async Task<Choice> Choose(RagFair ragfair, List<Item> stash, string[] kinds)
 		{
-			var stocked = StockedTank(stash, out var stockedTank);
+			var stocked = StockedTank(stash, kinds, out var stockedTank);
 			if (stocked != null)
 			{
-				return new Choice { Stock = stocked, Tank = stockedTank, Capacity = stocked.GetItemComponent<ResourceComponent>().MaxResource };
+				return new Choice { Stock = stocked, Kinds = kinds, Tank = stockedTank, Capacity = stocked.GetItemComponent<ResourceComponent>().MaxResource };
 			}
 
 			var wallet = FleaBarterBuy.Wallet(stash);
 			var profile = ragfair._tradingSession.Profile;
 			FleaBarterBuy.UpdateRates(ragfair);
-			var normal = new List<Offer>[Tanks.Length];
-			var raised = new List<Offer>[Tanks.Length];
+			var normal = new List<Offer>[kinds.Length];
+			var raised = new List<Offer>[kinds.Length];
 			var bases = new Dictionary<Offer, int>();
-			for (var tank = 0; tank < Tanks.Length; tank++)
+			for (var tank = 0; tank < kinds.Length; tank++)
 			{
 				normal[tank] = new List<Offer>();
 				raised[tank] = new List<Offer>();
-				var offers = (await FleaBarterBuy.FindOffers(ragfair, profile, Tanks[tank]))
+				var offers = (await FleaBarterBuy.FindOffers(ragfair, profile, kinds[tank]))
 					.Where(offer => IsFull(offer) && (!offer.SellInOnePiece || offer.CurrentItemCount == 1))
 					.OrderBy(FleaBarterBuy.Value).ThenBy(offer => offer.IntId);
 				foreach (var offer in offers)
@@ -170,37 +185,37 @@ namespace CustomRpTweaks.Client
 
 			Func<Offer, bool> affordable = offer => wallet[offer.MoneyType] >= PriceOf(offer);
 			var notes = new List<string>();
-			for (var tank = 0; tank < Tanks.Length; tank++)
+			for (var tank = 0; tank < kinds.Length; tank++)
 			{
 				var pick = normal[tank].FirstOrDefault(affordable);
 				if (pick != null)
 				{
-					return Made(pick, tank, false, notes, bases);
+					return Made(kinds, pick, tank, false, notes, bases);
 				}
 
-				notes.Add(WhyNot(tank, normal[tank], raised[tank], wallet));
+				notes.Add(WhyNot(kinds, tank, normal[tank], raised[tank], wallet));
 			}
 
-			for (var tank = 0; tank < Tanks.Length; tank++)
+			for (var tank = 0; tank < kinds.Length; tank++)
 			{
 				var pick = raised[tank].FirstOrDefault(affordable);
 				if (pick != null)
 				{
-					return Made(pick, tank, true, notes, bases);
+					return Made(kinds, pick, tank, true, notes, bases);
 				}
 			}
 
 			var everything = normal.SelectMany(list => list).Concat(raised.SelectMany(list => list)).OrderBy(FleaBarterBuy.Value).ToList();
 			if (everything.Count == 0)
 			{
-				return new Choice { Problem = "There is no full Metal fuel tank or Expeditionary fuel tank for sale on the flea market" };
+				return new Choice { Problem = "There is no full " + string.Join(" or ", kinds.Select(NameOf)) + " for sale on the flea market" };
 			}
 
 			var cheapest = everything[0];
-			var tankOfCheapest = Array.IndexOf(Tanks, cheapest.Item.StringTemplateId);
+			var tankOfCheapest = Array.IndexOf(kinds, cheapest.Item.StringTemplateId);
 			return new Choice
 			{
-				Problem = $"The cheapest full tank ({TankNames[Math.Max(0, tankOfCheapest)]}) costs {Money(cheapest.MoneyType, PriceOf(cheapest), false)} and you are short by {Money(cheapest.MoneyType, PriceOf(cheapest) - wallet[cheapest.MoneyType], false)}"
+				Problem = $"The cheapest full one ({NameOf(kinds[Math.Max(0, tankOfCheapest)])}) costs {Money(cheapest.MoneyType, PriceOf(cheapest), false)} and you are short by {Money(cheapest.MoneyType, PriceOf(cheapest) - wallet[cheapest.MoneyType], false)}"
 			};
 		}
 
@@ -211,9 +226,9 @@ namespace CustomRpTweaks.Client
 		private static string _currentKey;
 		private static float _currentAt;
 
-		private static Task<Choice> Current(RagFair ragfair)
+		private static Task<Choice> Current(RagFair ragfair, string[] kinds)
 		{
-			var key = StateKey(false);
+			var key = string.Join("+", kinds) + StateKey(false, kinds);
 			if (_current != null && key == _currentKey && Time.realtimeSinceStartup - _currentAt < 10f && !_current.IsFaulted && !_current.IsCanceled)
 			{
 				return _current;
@@ -221,12 +236,12 @@ namespace CustomRpTweaks.Client
 
 			_currentKey = key;
 			_currentAt = Time.realtimeSinceStartup;
-			_current = Choose(ragfair, StashOf(ragfair));
+			_current = Choose(ragfair, StashOf(ragfair), kinds);
 			return _current;
 		}
 
 		// The tooltip of the button
-		internal static async Task<string> Quote(bool replacing)
+		internal static async Task<string> Quote(bool replacing, string[] kinds)
 		{
 			var ragfair = RagfairNow();
 			if (!Available(ragfair))
@@ -234,7 +249,7 @@ namespace CustomRpTweaks.Client
 				return $"<b><color={FleaBarterBuy.Red}>Can't refill:</color></b> the flea market is not available";
 			}
 
-			var choice = await Current(ragfair);
+			var choice = await Current(ragfair, kinds);
 			if (!choice.CanBuy)
 			{
 				return $"<b><color={FleaBarterBuy.Red}>Can't refill:</color></b> " + choice.Problem;
@@ -242,7 +257,7 @@ namespace CustomRpTweaks.Client
 
 			if (choice.Stock != null)
 			{
-				return $"<b>Will use:</b> the <b>{choice.Name}</b> in your stash ({Mathf.CeilToInt(FuelOf(choice.Stock))}/{choice.Capacity:0} fuel)\n<size=85%><color={FleaBarterBuy.Grey}>Nothing is bought." + (replacing ? " The empty tank in the slot goes to your stash." : string.Empty) + "</color></size>";
+				return $"<b>Will use:</b> the <b>{choice.Name}</b> in your stash ({Mathf.CeilToInt(FuelOf(choice.Stock))}/{choice.Capacity:0})\n<size=85%><color={FleaBarterBuy.Grey}>Nothing is bought." + (replacing ? " What is in the slot now goes to your stash." : string.Empty) + "</color></size>";
 			}
 
 			var lines = new List<string>();
@@ -252,7 +267,7 @@ namespace CustomRpTweaks.Client
 			}
 
 			lines.Add(choice.Tank > 0
-				? $"<b>Will buy:</b> a full <b>{choice.Name}</b> instead (holds {choice.Capacity:0} fuel)"
+				? $"<b>Will buy:</b> a full <b>{choice.Name}</b> instead (holds {choice.Capacity:0})"
 				: $"<b>Will buy:</b> a full <b>{choice.Name}</b>");
 			if (choice.Overstock)
 			{
@@ -266,14 +281,14 @@ namespace CustomRpTweaks.Client
 
 			if (replacing)
 			{
-				lines.Add($"<size=85%><color={FleaBarterBuy.Grey}>The empty tank in the slot goes to your stash.</color></size>");
+				lines.Add($"<size=85%><color={FleaBarterBuy.Grey}>What is in the slot now goes to your stash.</color></size>");
 			}
 
 			return string.Join("\n", lines);
 		}
 
 		// What a choice depends on besides the offers: what you hold (and, for a tooltip, whether there is a tank to replace)
-		internal static string StateKey(bool replacing)
+		internal static string StateKey(bool replacing, string[] kinds)
 		{
 			var ragfair = RagfairNow();
 			if (ragfair == null)
@@ -282,11 +297,11 @@ namespace CustomRpTweaks.Client
 			}
 
 			var stash = StashOf(ragfair);
-			var tanks = stash.Where(item => item != null && Array.IndexOf(Tanks, item.StringTemplateId) >= 0 && FuelOf(item) > Mathf.Epsilon).Select(item => item.Id + "=" + Mathf.CeilToInt(FuelOf(item)));
+			var tanks = stash.Where(item => item != null && Array.IndexOf(kinds, item.StringTemplateId) >= 0 && FuelOf(item) > Mathf.Epsilon).Select(item => item.Id + "=" + Mathf.CeilToInt(FuelOf(item)));
 			return replacing + ":" + string.Join(",", FleaBarterBuy.Wallet(stash).Select(pair => pair.Key + "=" + pair.Value)) + "|" + string.Join(",", tanks);
 		}
 
-		internal static void Start(FuelSelectionCell cell)
+		internal static void Start(FuelSelectionCell cell, string[] kinds)
 		{
 			// What the tooltip says is about to be out of date
 			QuoteHover.ClearCache();
@@ -296,10 +311,10 @@ namespace CustomRpTweaks.Client
 				tooltip.Close();
 			}
 
-			FleaBarterBuy.RunGuarded(() => Run(cell));
+			FleaBarterBuy.RunGuarded(() => Run(cell, kinds));
 		}
 
-		private static async Task Run(FuelSelectionCell cell)
+		private static async Task Run(FuelSelectionCell cell, string[] kinds)
 		{
 			var ragfair = RagfairNow();
 			if (!Available(ragfair))
@@ -311,7 +326,7 @@ namespace CustomRpTweaks.Client
 			// Always from fresh offers: this one spends money
 			_current = null;
 			var stash = StashOf(ragfair);
-			var choice = await Choose(ragfair, stash);
+			var choice = await Choose(ragfair, stash, kinds);
 			if (!choice.CanBuy)
 			{
 				FleaBarterBuy.Notify("Refill: nothing bought. " + choice.Problem + ".");
@@ -334,7 +349,7 @@ namespace CustomRpTweaks.Client
 				// The tank should be in the stash as the purchase returns; give the game a moment if not
 				for (var attempt = 0; attempt < 15 && bought == null; attempt++)
 				{
-					bought = StashOf(ragfair).FirstOrDefault(item => item.StringTemplateId == Tanks[choice.Tank] && !before.Contains(item.Id.ToString()));
+					bought = StashOf(ragfair).FirstOrDefault(item => item.StringTemplateId == kinds[choice.Tank] && !before.Contains(item.Id.ToString()));
 					if (bought == null)
 					{
 						await Task.Delay(200);
@@ -344,7 +359,7 @@ namespace CustomRpTweaks.Client
 
 			var stocked = choice.Stock != null;
 			var price = stocked ? string.Empty : " for " + Money(choice.Currency, choice.Price, false);
-			var what = choice.Name + (choice.Tank > 0 ? $" instead of the {TankNames[0]}" : string.Empty) + (choice.Overstock ? " at an overstock price" : string.Empty);
+			var what = choice.Name + (choice.Tank > 0 ? $" instead of the {NameOf(kinds[0])}" : string.Empty) + (choice.Overstock ? " at an overstock price" : string.Empty);
 			if (bought == null)
 			{
 				FleaBarterBuy.Notify($"Refill: bought a {what}{price}, but it is not in your stash yet. Put it in the slot yourself.");
@@ -411,7 +426,7 @@ namespace CustomRpTweaks.Client
 				}
 				else
 				{
-					var choice = await Current(ragfair);
+					var choice = await Current(ragfair, placer.Kinds);
 					colour = !choice.CanBuy ? Tint(FleaBarterBuy.Red, Color.red) : choice.Overstock ? Tint(OrangeHex, new Color(1f, 0.6f, 0.24f)) : Color.white;
 				}
 
@@ -429,14 +444,15 @@ namespace CustomRpTweaks.Client
 		// Called when a slot is shown: the button is made once per slot (generator only; the air filter unit uses the same screen)
 		internal static void Attach(FuelSelectionCell cell, IConsumer consumer)
 		{
-			if (!(consumer is GeneratorBehaviour))
+			var kinds = KindsFor(consumer);
+			if (kinds == null)
 			{
 				return;
 			}
 
 			if (cell.transform.Find(ButtonName) == null)
 			{
-				Build(cell);
+				Build(cell, kinds);
 			}
 
 			Refresh(cell);
@@ -465,7 +481,7 @@ namespace CustomRpTweaks.Client
 			}
 		}
 
-		private static void Build(FuelSelectionCell cell)
+		private static void Build(FuelSelectionCell cell, string[] kinds)
 		{
 			var go = new GameObject(ButtonName, typeof(RectTransform), typeof(Image), typeof(Button), typeof(QuoteHover), typeof(FuelRefillPlacer), typeof(LayoutElement));
 			go.transform.SetParent(cell.transform, false);
@@ -479,6 +495,7 @@ namespace CustomRpTweaks.Client
 			go.AddComponent<GraphicRaycaster>();
 			var placer = go.GetComponent<FuelRefillPlacer>();
 			placer.Cell = cell;
+			placer.Kinds = kinds;
 			placer.Dropdown = cell.DropdownButton == null ? null : cell.DropdownButton.transform as RectTransform;
 
 			// A dark, slightly see-through bar with a thin light frame (like the game's own frames); lighter on hover, darker pressed
@@ -494,11 +511,11 @@ namespace CustomRpTweaks.Client
 			colors.highlightedColor = new Color(2.2f, 2.2f, 2.2f, 1f);
 			colors.pressedColor = new Color(0.6f, 0.6f, 0.6f, 1f);
 			click.colors = colors;
-			click.onClick.AddListener(() => Start(cell));
+			click.onClick.AddListener(() => Start(cell, kinds));
 
 			var hover = go.GetComponent<QuoteHover>();
-			hover.CacheKey = () => "fuel:" + StateKey(cell != null && cell.FuelItem != null);
-			hover.Quote = () => Quote(cell != null && cell.FuelItem != null);
+			hover.CacheKey = () => "fuel:" + string.Join("+", kinds) + StateKey(cell != null && cell.FuelItem != null, kinds);
+			hover.Quote = () => Quote(cell != null && cell.FuelItem != null, kinds);
 
 			var caption = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI));
 			caption.transform.SetParent(go.transform, false);
@@ -537,6 +554,7 @@ namespace CustomRpTweaks.Client
 		public FuelSelectionCell Cell;
 		public RectTransform Dropdown;
 		public TextMeshProUGUI Label;
+		public string[] Kinds;
 		private readonly Vector3[] _corners = new Vector3[4];
 		private bool _logged;
 
