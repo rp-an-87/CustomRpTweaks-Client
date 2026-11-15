@@ -18,8 +18,10 @@ namespace CustomRpTweaks.Client
 {
 	// "Refill" on the generator's fuel slots: a button over a slot that is empty or whose fuel ran out. It buys one full fuel tank on the
 	// flea market (traders' offers included, the cheapest full one) and puts it in the slot the way the slot's own dropdown would: the empty
-	// tank goes back to the stash, the new one takes its place. A Metal fuel tank is preferred; when none is for sale, the Expeditionary one
-	// is bought instead and the tooltip and the message say so.
+	// tank goes back to the stash, the new one takes its place.
+	// What it buys, in order: a Metal fuel tank at a normal price, an Expeditionary fuel tank at a normal price, then (nothing is for sale at
+	// a normal price) a Metal tank at an overstock price (a price the server's trader overstock raised), then an Expeditionary one.
+	// The button's text is white when the purchase is at a normal price, orange at an overstock price, red when nothing can be bought.
 	internal static class FuelRefill
 	{
 		private const string ButtonName = "RefillFuel";
@@ -33,11 +35,14 @@ namespace CustomRpTweaks.Client
 			public Offer Offer;
 			public int Tank;
 			public long Price;
+			public long BasePrice;
 			public ECurrencyType Currency;
 			public float Capacity;
+			public bool Overstock;
 			public string Problem;
+			public readonly List<string> Notes = new List<string>();      // why a tank that comes earlier in the order was not bought
+			public bool CanBuy => Offer != null;
 			public string Name => TankNames[Tank];
-			public bool Fallback => Tank > 0;
 		}
 
 		private static RagFair RagfairNow()
@@ -63,41 +68,131 @@ namespace CustomRpTweaks.Client
 			return resource == null ? 0f : resource.MaxResource;
 		}
 
-		// The cheapest full tank you can pay for, the Metal one first. The Expeditionary one is only taken when no full Metal tank is for
-		// sale at all; a Metal tank you can't afford is reported, not swapped for the other.
+		// A trader's offer whose price the server's overstock raised (the same test as the flea market rows use); other players' offers never are
+		private static bool Overstocked(Offer offer, out int basePrice)
+		{
+			basePrice = (int)PriceOf(offer);
+			if (offer.MemberType != EMemberCategory.Trader || offer.User == null || offer.Item == null)
+			{
+				return false;
+			}
+
+			return OverstockPrices.IsRaised('f', offer.User.Id.ToString(), offer.Item.Id.ToString(), offer.Requirements[0].IntCount, out basePrice);
+		}
+
+		private static string Money(ECurrencyType currency, long amount, bool colour) => FleaBarterBuy.Price(new Dictionary<ECurrencyType, long> { { currency, amount } }, colour);
+
+		private static string OrangeHex => Plugin.PriceIndicatorNewColor != null && !string.IsNullOrEmpty(Plugin.PriceIndicatorNewColor.Value) ? Plugin.PriceIndicatorNewColor.Value : "#FF9A3C";
+
+		private static string WhyNot(int tank, List<Offer> normal, List<Offer> raised, Dictionary<ECurrencyType, long> wallet)
+		{
+			if (normal.Count == 0)
+			{
+				return raised.Count == 0 ? $"No full {TankNames[tank]} for sale" : $"{TankNames[tank]} is only for sale at an overstock price";
+			}
+
+			var cheapest = normal[0];
+			var missing = PriceOf(cheapest) - wallet[cheapest.MoneyType];
+			return $"The cheapest {TankNames[tank]} costs {Money(cheapest.MoneyType, PriceOf(cheapest), false)} and you are short by {Money(cheapest.MoneyType, missing, false)}";
+		}
+
+		private static Choice Made(Offer offer, int tank, bool overstock, List<string> notes, Dictionary<Offer, int> bases)
+		{
+			var choice = new Choice
+			{
+				Offer = offer, Tank = tank, Price = PriceOf(offer), Currency = offer.MoneyType, Capacity = CapacityOf(offer), Overstock = overstock,
+				BasePrice = bases.TryGetValue(offer, out var basePrice) ? basePrice : PriceOf(offer)
+			};
+			choice.Notes.AddRange(notes);
+			return choice;
+		}
+
+		// The cheapest full tank at a price you can pay, by the order in the header comment. Each tank's offers are split into those at a
+		// normal price and those the overstock raised.
 		private static async Task<Choice> Choose(RagFair ragfair, Dictionary<ECurrencyType, long> wallet)
 		{
 			var profile = ragfair._tradingSession.Profile;
 			FleaBarterBuy.UpdateRates(ragfair);
+			var normal = new List<Offer>[Tanks.Length];
+			var raised = new List<Offer>[Tanks.Length];
+			var bases = new Dictionary<Offer, int>();
 			for (var tank = 0; tank < Tanks.Length; tank++)
 			{
+				normal[tank] = new List<Offer>();
+				raised[tank] = new List<Offer>();
 				var offers = (await FleaBarterBuy.FindOffers(ragfair, profile, Tanks[tank]))
 					.Where(offer => IsFull(offer) && (!offer.SellInOnePiece || offer.CurrentItemCount == 1))
-					.OrderBy(FleaBarterBuy.Value).ThenBy(offer => offer.IntId).ToList();
-				if (offers.Count == 0)
+					.OrderBy(FleaBarterBuy.Value).ThenBy(offer => offer.IntId);
+				foreach (var offer in offers)
 				{
-					continue;
+					if (Overstocked(offer, out var basePrice))
+					{
+						bases[offer] = basePrice;
+						raised[tank].Add(offer);
+					}
+					else
+					{
+						normal[tank].Add(offer);
+					}
 				}
-
-				var pick = offers.FirstOrDefault(offer => wallet[offer.MoneyType] >= PriceOf(offer));
-				if (pick != null)
-				{
-					return new Choice { Offer = pick, Tank = tank, Price = PriceOf(pick), Currency = pick.MoneyType, Capacity = CapacityOf(pick) };
-				}
-
-				var cheapest = offers[0];
-				var missing = PriceOf(cheapest) - wallet[cheapest.MoneyType];
-				return new Choice
-				{
-					Tank = tank,
-					Problem = $"The cheapest full {TankNames[tank]} costs {FleaBarterBuy.Price(new Dictionary<ECurrencyType, long> { { cheapest.MoneyType, PriceOf(cheapest) } }, false)} and you are short by {FleaBarterBuy.Price(new Dictionary<ECurrencyType, long> { { cheapest.MoneyType, missing } }, false)}"
-				};
 			}
 
-			return new Choice { Problem = "There is no full Metal fuel tank or Expeditionary fuel tank for sale on the flea market" };
+			Func<Offer, bool> affordable = offer => wallet[offer.MoneyType] >= PriceOf(offer);
+			var notes = new List<string>();
+			for (var tank = 0; tank < Tanks.Length; tank++)
+			{
+				var pick = normal[tank].FirstOrDefault(affordable);
+				if (pick != null)
+				{
+					return Made(pick, tank, false, notes, bases);
+				}
+
+				notes.Add(WhyNot(tank, normal[tank], raised[tank], wallet));
+			}
+
+			for (var tank = 0; tank < Tanks.Length; tank++)
+			{
+				var pick = raised[tank].FirstOrDefault(affordable);
+				if (pick != null)
+				{
+					return Made(pick, tank, true, notes, bases);
+				}
+			}
+
+			var everything = normal.SelectMany(list => list).Concat(raised.SelectMany(list => list)).OrderBy(FleaBarterBuy.Value).ToList();
+			if (everything.Count == 0)
+			{
+				return new Choice { Problem = "There is no full Metal fuel tank or Expeditionary fuel tank for sale on the flea market" };
+			}
+
+			var cheapest = everything[0];
+			var tankOfCheapest = Array.IndexOf(Tanks, cheapest.Item.StringTemplateId);
+			return new Choice
+			{
+				Problem = $"The cheapest full tank ({TankNames[Math.Max(0, tankOfCheapest)]}) costs {Money(cheapest.MoneyType, PriceOf(cheapest), false)} and you are short by {Money(cheapest.MoneyType, PriceOf(cheapest) - wallet[cheapest.MoneyType], false)}"
+			};
 		}
 
 		private static List<Item> StashOf(RagFair ragfair) => ragfair._tradingSession.Profile.Inventory.Stash.GetAllItemsFromCollection().ToList();
+
+		// One search serves every slot's button and tooltip for a few seconds, as long as what you hold is the same
+		private static Task<Choice> _current;
+		private static string _currentKey;
+		private static float _currentAt;
+
+		private static Task<Choice> Current(RagFair ragfair)
+		{
+			var key = StateKey(false);
+			if (_current != null && key == _currentKey && Time.realtimeSinceStartup - _currentAt < 10f && !_current.IsFaulted && !_current.IsCanceled)
+			{
+				return _current;
+			}
+
+			_currentKey = key;
+			_currentAt = Time.realtimeSinceStartup;
+			_current = Choose(ragfair, FleaBarterBuy.Wallet(StashOf(ragfair)));
+			return _current;
+		}
 
 		// The tooltip of the button
 		internal static async Task<string> Quote(bool replacing)
@@ -108,25 +203,31 @@ namespace CustomRpTweaks.Client
 				return $"<b><color={FleaBarterBuy.Red}>Can't refill:</color></b> the flea market is not available";
 			}
 
-			var choice = await Choose(ragfair, FleaBarterBuy.Wallet(StashOf(ragfair)));
-			var lines = new List<string>();
-			if (choice.Problem != null)
+			var choice = await Current(ragfair);
+			if (!choice.CanBuy)
 			{
-				lines.Add($"<b><color={FleaBarterBuy.Red}>Can't refill:</color></b> " + choice.Problem);
-				return string.Join("\n", lines);
+				return $"<b><color={FleaBarterBuy.Red}>Can't refill:</color></b> " + choice.Problem;
 			}
 
-			if (choice.Fallback)
+			var lines = new List<string>();
+			foreach (var note in choice.Notes)
 			{
-				lines.Add($"<b><color={FleaBarterBuy.Yellow}>No full {TankNames[0]} for sale.</color></b>");
-				lines.Add($"<b>Will buy:</b> a full <b>{choice.Name}</b> instead (holds {choice.Capacity:0} fuel)");
+				lines.Add($"<color={(choice.Overstock ? OrangeHex : FleaBarterBuy.Yellow)}>{note}.</color>");
+			}
+
+			lines.Add(choice.Tank > 0
+				? $"<b>Will buy:</b> a full <b>{choice.Name}</b> instead (holds {choice.Capacity:0} fuel)"
+				: $"<b>Will buy:</b> a full <b>{choice.Name}</b>");
+			if (choice.Overstock)
+			{
+				lines.Add($"<b>Buy for:</b> <color={OrangeHex}>{Money(choice.Currency, choice.Price, false)}</color>");
+				lines.Add($"<size=85%><color={FleaBarterBuy.Grey}>An overstock price, normally {Money(choice.Currency, choice.BasePrice, false)}.</color></size>");
 			}
 			else
 			{
-				lines.Add($"<b>Will buy:</b> a full <b>{choice.Name}</b>");
+				lines.Add("<b>Buy for:</b> " + Money(choice.Currency, choice.Price, true));
 			}
 
-			lines.Add("<b>Buy for:</b> " + FleaBarterBuy.Price(new Dictionary<ECurrencyType, long> { { choice.Currency, choice.Price } }, true));
 			if (replacing)
 			{
 				lines.Add($"<size=85%><color={FleaBarterBuy.Grey}>The empty tank in the slot goes to your stash.</color></size>");
@@ -135,7 +236,7 @@ namespace CustomRpTweaks.Client
 			return string.Join("\n", lines);
 		}
 
-		// What a quote depends on besides the offers: what you hold and whether there is a tank to replace
+		// What a choice depends on besides the offers: what you hold (and, for a tooltip, whether there is a tank to replace)
 		internal static string StateKey(bool replacing)
 		{
 			var ragfair = RagfairNow();
@@ -169,9 +270,11 @@ namespace CustomRpTweaks.Client
 				return;
 			}
 
+			// Always from fresh offers: this one spends money
+			_current = null;
 			var stash = StashOf(ragfair);
 			var choice = await Choose(ragfair, FleaBarterBuy.Wallet(stash));
-			if (choice.Problem != null)
+			if (!choice.CanBuy)
 			{
 				FleaBarterBuy.Notify("Refill: nothing bought. " + choice.Problem + ".");
 				return;
@@ -185,6 +288,8 @@ namespace CustomRpTweaks.Client
 				return;
 			}
 
+			_current = null;
+
 			// The tank should be in the stash as the purchase returns; give the game a moment if not
 			Item bought = null;
 			for (var attempt = 0; attempt < 15 && bought == null; attempt++)
@@ -196,8 +301,8 @@ namespace CustomRpTweaks.Client
 				}
 			}
 
-			var price = FleaBarterBuy.Price(new Dictionary<ECurrencyType, long> { { choice.Currency, choice.Price } }, false);
-			var what = choice.Fallback ? $"{choice.Name} (no full {TankNames[0]} for sale)" : choice.Name;
+			var price = Money(choice.Currency, choice.Price, false);
+			var what = choice.Name + (choice.Tank > 0 ? $" instead of the {TankNames[0]}" : string.Empty) + (choice.Overstock ? " at an overstock price" : string.Empty);
 			if (bought == null)
 			{
 				FleaBarterBuy.Notify($"Refill: bought a {what} for {price}, but it is not in your stash yet. Put it in the slot yourself.");
@@ -217,6 +322,12 @@ namespace CustomRpTweaks.Client
 			FleaBarterBuy.Notify(filled
 				? $"Refill: bought a {what} for {price} and put it in the slot."
 				: $"Refill: bought a {what} for {price}, but the slot could not take it (is the stash full?). It is in your stash.");
+
+			// What the other buttons say has changed (the money, the offers)
+			foreach (var placer in UnityEngine.Object.FindObjectsOfType<FuelRefillPlacer>())
+			{
+				UpdateLook(placer.Cell);
+			}
 		}
 
 		// The hideout only learns of items that arrive in the stash through the game's own events, which a flea market purchase doesn't raise
@@ -233,6 +344,43 @@ namespace CustomRpTweaks.Client
 			catch (Exception e)
 			{
 				Plugin.Log.LogWarning("Refill: couldn't refresh the hideout stash: " + e.Message);
+			}
+		}
+
+		private static Color Tint(string hex, Color fallback) => ColorUtility.TryParseHtmlString(hex, out var colour) ? colour : fallback;
+
+		// The text of the button: white at a normal price, orange at an overstock price, red when nothing can be bought
+		private static async void UpdateLook(FuelSelectionCell cell)
+		{
+			try
+			{
+				var button = cell == null ? null : cell.transform.Find(ButtonName);
+				var placer = button == null ? null : button.GetComponent<FuelRefillPlacer>();
+				if (placer == null || placer.Label == null)
+				{
+					return;
+				}
+
+				var ragfair = RagfairNow();
+				Color colour;
+				if (!Available(ragfair))
+				{
+					colour = Tint(FleaBarterBuy.Red, Color.red);
+				}
+				else
+				{
+					var choice = await Current(ragfair);
+					colour = !choice.CanBuy ? Tint(FleaBarterBuy.Red, Color.red) : choice.Overstock ? Tint(OrangeHex, new Color(1f, 0.6f, 0.24f)) : Color.white;
+				}
+
+				if (placer != null && placer.Label != null)
+				{
+					placer.Label.color = colour;
+				}
+			}
+			catch (Exception e)
+			{
+				Plugin.Verbose($"Refill button colour: {e.Message}");
 			}
 		}
 
@@ -268,6 +416,11 @@ namespace CustomRpTweaks.Client
 			{
 				button.gameObject.SetActive(show);
 			}
+
+			if (show)
+			{
+				UpdateLook(cell);
+			}
 		}
 
 		private static void Build(FuelSelectionCell cell)
@@ -286,15 +439,18 @@ namespace CustomRpTweaks.Client
 			placer.Cell = cell;
 			placer.Dropdown = cell.DropdownButton == null ? null : cell.DropdownButton.transform as RectTransform;
 
-			// Like the game's own flat dark buttons: dark panel, light text, lighter on hover
+			// A dark, slightly see-through bar with a thin light frame (like the game's own frames); lighter on hover, darker pressed
 			var image = go.GetComponent<Image>();
-			image.color = new Color(0.16f, 0.18f, 0.18f, 0.95f);
+			image.color = new Color(0.07f, 0.08f, 0.08f, 0.82f);
+			var frame = go.AddComponent<UnityEngine.UI.Outline>();
+			frame.effectColor = new Color(0.55f, 0.55f, 0.52f, 0.9f);
+			frame.effectDistance = new Vector2(1f, -1f);
 			var click = go.GetComponent<Button>();
 			click.targetGraphic = image;
 			var colors = click.colors;
 			colors.normalColor = Color.white;
-			colors.highlightedColor = new Color(1.6f, 1.6f, 1.6f, 1f);
-			colors.pressedColor = new Color(0.7f, 0.7f, 0.7f, 1f);
+			colors.highlightedColor = new Color(2.2f, 2.2f, 2.2f, 1f);
+			colors.pressedColor = new Color(0.6f, 0.6f, 0.6f, 1f);
 			click.colors = colors;
 			click.onClick.AddListener(() => Start(cell));
 
@@ -310,12 +466,12 @@ namespace CustomRpTweaks.Client
 				label.font = cell._details.font;
 			}
 
-			label.text = "REFILL";
-			label.color = new Color(0.82f, 0.81f, 0.74f, 1f);
+			label.text = "Refill";
+			label.color = Color.white;
 			label.alignment = TextAlignmentOptions.Center;
 			label.enableAutoSizing = true;
 			label.fontSizeMin = 8f;
-			label.fontSizeMax = 14f;
+			label.fontSizeMax = 13f;
 			label.enableWordWrapping = false;
 			label.raycastTarget = false;
 			var rect = (RectTransform)caption.transform;
@@ -323,25 +479,28 @@ namespace CustomRpTweaks.Client
 			rect.anchorMax = Vector2.one;
 			rect.offsetMin = new Vector2(2f, 0f);
 			rect.offsetMax = new Vector2(-2f, 0f);
+			placer.Label = label;
 			go.SetActive(false);
 		}
 	}
 
-	// Keeps the button across the top of the slot's box, worked out in world space (so it doesn't depend on how the game anchors the
-	// slot): from the left edge of the slot to where its dropdown arrow starts.
+	// Keeps the button across the top of the slot's box, worked out in world space (so it doesn't depend on how the game anchors the slot).
+	// The box is the slot's item icon when that is about as wide as the dropdown arrow is tall (the box is square, the arrow as tall as it);
+	// otherwise it is estimated from the arrow.
 	internal class FuelRefillPlacer : MonoBehaviour
 	{
-		private const float Height = 30f;
-		private const float Inset = 2f;
+		private const float Height = 22f;
+		private const float Inset = 3f;
 
 		public FuelSelectionCell Cell;
 		public RectTransform Dropdown;
+		public TextMeshProUGUI Label;
 		private readonly Vector3[] _corners = new Vector3[4];
 		private bool _logged;
 
 		private void LateUpdate()
 		{
-			if (Cell == null)
+			if (Cell == null || Dropdown == null)
 			{
 				return;
 			}
@@ -353,38 +512,52 @@ namespace CustomRpTweaks.Client
 				return;
 			}
 
-			((RectTransform)Cell.transform).GetWorldCorners(_corners);
-			var left = _corners[1].x;
-			var top = _corners[1].y;
-			var hasDropdown = false;
-			var right = _corners[2].x;
-			if (Dropdown != null)
+			Dropdown.GetWorldCorners(_corners);
+			var arrowLeft = _corners[0].x;
+			var arrowHeight = _corners[1].y - _corners[0].y;
+			var left = 0f;
+			var top = 0f;
+			var width = 0f;
+			var source = "arrow";
+
+			var icon = Cell._selectedItemIcon == null ? null : Cell._selectedItemIcon.transform as RectTransform;
+			if (icon != null)
 			{
-				Dropdown.GetWorldCorners(_corners);
-				// The arrow is as tall as the box and starts at its top: the cell's own top is not (the button ended up under the box)
-				top = _corners[1].y;
-				hasDropdown = true;
-				if (_corners[0].x > left + 1f * scale)
+				icon.GetWorldCorners(_corners);
+				var iconWidth = _corners[2].x - _corners[0].x;
+				if (iconWidth > arrowHeight * 0.7f && iconWidth < arrowHeight * 1.4f)
 				{
-					right = Mathf.Min(right, _corners[0].x);
+					left = _corners[0].x;
+					top = _corners[1].y;
+					width = iconWidth;
+					source = "icon";
 				}
+			}
+
+			if (width <= 0f)
+			{
+				// The box is a little taller than the arrow and sits just to the left of it
+				width = arrowHeight * 1.09f;
+				left = arrowLeft - arrowHeight * 0.07f - width;
+				Dropdown.GetWorldCorners(_corners);
+				top = _corners[1].y + arrowHeight * 0.04f;
 			}
 
 			if (!_logged)
 			{
 				_logged = true;
-				Plugin.Verbose($"Refill button placed (dropdown {hasDropdown}): left {left:0.0}, right {right:0.0}, top {top:0.0}, scale {scale:0.00}");
+				Plugin.Verbose($"Refill button placed from the {source}: left {left:0.0}, width {width:0.0}, top {top:0.0}, arrow height {arrowHeight:0.0}, scale {scale:0.00}");
 			}
 
-			var width = (right - left) / scale - 2f * Inset;
-			if (width < 10f)
+			var localWidth = width / scale - 2f * Inset;
+			if (localWidth < 10f)
 			{
 				return;
 			}
 
 			rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
 			rect.pivot = new Vector2(0f, 1f);
-			rect.sizeDelta = new Vector2(width, Height);
+			rect.sizeDelta = new Vector2(localWidth, Height);
 			var target = new Vector3(left + Inset * scale, top - Inset * scale, rect.position.z);
 			if ((rect.position - target).sqrMagnitude > 1e-6f)
 			{
