@@ -47,6 +47,7 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<bool> HideoutFuelRefill;
 		internal static ConfigEntry<KeyboardShortcut> RangefinderZeroHotkey;
 		internal static ConfigEntry<RangefinderRounding> RangefinderZeroRounding;
+		internal static ConfigEntry<KeyboardShortcut> ZeroResetHotkey;
 		internal static ConfigEntry<bool> BipodRelax;
 		internal static ConfigEntry<bool> BipodAnySurface;
 		internal static ConfigEntry<float> BipodClearance;
@@ -237,6 +238,8 @@ namespace CustomRpTweaks.Client
 				"While aiming through a sight, press this to set its zero to the distance the rangefinder attached to your weapon (such as the RAPTAR) shows, rounded down or up (see the next setting) to a zero step the sight offers. The rangefinder must be switched on and its display in use; the handheld rangefinder is not used. It uses the game's own zeroing steps, so it only works while aiming. Unassign the key to turn the feature off.");
 			RangefinderZeroRounding = Config.Bind("19. Aiming", "3. Zero from rangefinder: rounding", RangefinderRounding.Down,
 				"Which zero step the hotkey picks when the rangefinder's distance is between two. Down: the step at or below the distance (a 437 m reading with 50 m steps gives 400 m). Up: the step at or above it (450 m). Past the first or last step of the sight, that step is used.");
+			ZeroResetHotkey = Config.Bind("19. Aiming", "3b. Reset zero to minimum hotkey", new KeyboardShortcut(KeyCode.PageDown, KeyCode.LeftAlt),
+				"While aiming through a sight, press this to set its zero back to the sight's shortest zero step. It uses the game's own zeroing steps, so it only works while aiming. Unassign the key to turn it off.");
 			BipodRelax = Config.Bind("19. Aiming", "4. Relax deploying a bipod while prone", true,
 				"The game only lets you deploy a bipod prone on ground it counts very strictly: low-poly terrain, nothing within 20 cm of the spot, ground right under the bipod and nearly level. With this on, the search uses the settings below instead (the bipod then rests on what it finds, which may not look perfect). Off: the game's own rules. Takes effect on the next deploy.");
 			BipodAnySurface = Config.Bind("19. Aiming", "5. Bipod: other surfaces count as ground", true,

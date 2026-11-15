@@ -93,8 +93,60 @@ namespace CustomRpTweaks.Client
 
 		private static void Say(string message) => NotificationManager.DisplayMessageNotification("Zero from rangefinder: " + message);
 
+		// Hotkey: the zero of the sight you are aiming through goes back to its shortest step
+		private static void ResetToMinimum()
+		{
+			var player = GamePlayerOwner.MyPlayer;
+			var animation = player == null ? null : player.ProceduralWeaponAnimation;
+			var sight = animation == null ? null : animation.CurrentAimingMod;
+			if (animation == null || !animation.IsAiming || sight == null)
+			{
+				NotificationManager.DisplayMessageNotification("Zero reset: aim down your sights first.");
+				return;
+			}
+
+			var scope = sight.SelectedScopeIndex;
+			var distances = sight.GetScopeCalibrationDistances(scope);
+			if (distances == null || distances.Length == 0 || !sight.HasOpticCalibrationPoints(scope))
+			{
+				NotificationManager.DisplayMessageNotification("Zero reset: this sight has no zero steps.");
+				return;
+			}
+
+			var target = 0;
+			for (var i = 1; i < distances.Length; i++)
+			{
+				if (distances[i] < distances[target])
+				{
+					target = i;
+				}
+			}
+
+			for (var guard = 0; guard < 64 && sight.GetCurrentOpticCalibrationPointIndex(scope) != target; guard++)
+			{
+				if (sight.GetCurrentOpticCalibrationPointIndex(scope) < target)
+				{
+					animation.OpticCalibrationSwitchUp();
+				}
+				else
+				{
+					animation.OpticCalibrationSwitchDown();
+				}
+			}
+
+			var now = sight.GetCurrentOpticCalibrationPointIndex(scope);
+			Plugin.Verbose($"Zero reset: ended at index {now}, wanted {target}, steps [{string.Join(", ", distances)}]");
+			NotificationManager.DisplayMessageNotification(now == target ? $"Zero reset to {distances[target]} m." : $"Zero reset: could only reach {distances[now]} m.");
+		}
+
 		internal static void Update()
 		{
+			if (Plugin.ZeroResetHotkey.Value.IsDown())
+			{
+				ResetToMinimum();
+				return;
+			}
+
 			if (!Plugin.RangefinderZeroHotkey.Value.IsDown())
 			{
 				return;
