@@ -232,6 +232,7 @@ namespace CustomRpTweaks.Client
 			RangefinderZeroMaxAge = Config.Bind("19. Aiming", "3. Rangefinder reading stays valid for (seconds)", 30f,
 				new ConfigDescription("A rangefinder reading older than this is not used by the zero hotkey: aim the rangefinder at the target again. The display measures twice a second while it is on and in view.", new AcceptableValueRange<float>(1f, 600f)));
 			new RangefinderReadingPatch().Enable();
+			new BipodDeployLogPatch().Enable();
 			new FuelRefillShowPatch().Enable();
 			new FuelRefillUpdatePatch().Enable();
 			new HideoutQuickBuy.BuyMaterialsPatch().Enable();
