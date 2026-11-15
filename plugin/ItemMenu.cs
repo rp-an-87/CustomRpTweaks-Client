@@ -369,6 +369,19 @@ namespace CustomRpTweaks.Client
 			for (var i = 0; i < buttons.Count; i++)
 			{
 				var index = i;
+				if (!actions.HasTooltip(index))
+				{
+					// Ready or already built: no tooltip (a pooled button may still carry an old one)
+					var old = buttons[i].GetComponent<QuoteHover>();
+					if (old != null)
+					{
+						old.Quote = null;
+						old.CacheKey = null;
+					}
+
+					continue;
+				}
+
 				var hover = buttons[i].GetComponent<QuoteHover>() ?? buttons[i].gameObject.AddComponent<QuoteHover>();
 				hover.CacheKey = () => actions.CacheKey(index);
 				hover.Quote = () => actions.Quote(index);

@@ -258,8 +258,16 @@ namespace CustomRpTweaks.Client
 				return "  <color=#9A9A9A>(built)</color>";
 			}
 
-			return analysis.ToBuy > 0 ? $"  <color=#F2C94C>(buys {analysis.ToBuy})</color>" : string.Empty;
+			if (analysis.ToBuy > 0)
+			{
+				return $"  <color=#F2C94C>(buys {analysis.ToBuy})</color>";
+			}
+
+			return analysis.Borrowed.Count > 0 ? $"  <color=#F2C94C>(borrows {analysis.Borrowed.Count})</color>" : "  <color=#6FCF6F>(ready)</color>";
 		}
+
+		// Nothing to buy or borrow: the entry says (ready) and has no tooltip
+		internal static bool IsReady(Analysis analysis) => analysis != null && !analysis.Built && analysis.ToBuy == 0 && analysis.Borrowed.Count == 0;
 
 		// The tooltip of a build in the submenu: whether it buys anything, what and for how much
 		internal static async Task<string> Quote(InventoryController controller, Weapon weapon, WeaponBuild build)
@@ -403,11 +411,16 @@ namespace CustomRpTweaks.Client
 		private readonly Weapon _weapon;
 		private readonly List<WeaponBuild> _builds;
 		private readonly List<string> _marks = new List<string>();
+		private readonly List<bool> _built = new List<bool>();
+		private readonly List<bool> _ready = new List<bool>();
 
 		// The submenu being shown (the tooltips are attached to its buttons after the game has made them)
 		internal static BuildActions Current;
 
 		internal int Count => _builds.Count;
+
+		// A build that is ready has nothing to say, a built one is disabled
+		internal bool HasTooltip(int index) => index < _ready.Count && !_ready[index] && !_built[index];
 
 		internal BuildActions(ItemUiContext uiContext, Weapon weapon) : base(uiContext)
 		{
@@ -418,11 +431,16 @@ namespace CustomRpTweaks.Client
 			{
 				try
 				{
-					_marks.Add(controller == null ? string.Empty : WeaponBuildBuy.Indicator(WeaponBuildBuy.Analyze(controller, weapon, build)));
+					var analysis = controller == null ? null : WeaponBuildBuy.Analyze(controller, weapon, build);
+					_marks.Add(WeaponBuildBuy.Indicator(analysis));
+					_built.Add(analysis != null && analysis.Built);
+					_ready.Add(WeaponBuildBuy.IsReady(analysis));
 				}
 				catch (Exception e)
 				{
 					_marks.Add(string.Empty);
+					_built.Add(false);
+					_ready.Add(false);
 					Plugin.Log.LogWarning($"Build menu: couldn't look at a build: {e.Message}");
 				}
 			}
@@ -465,7 +483,9 @@ namespace CustomRpTweaks.Client
 
 		public override bool IsActive(EBuildPreset button) => (int)button < _builds.Count;
 
-		public override IResult IsInteractive(EBuildPreset button) => SuccessfulResult.New;
+		// The weapon already is that build: greyed out, the game shows the reason as the tooltip
+		public override IResult IsInteractive(EBuildPreset button) =>
+			(int)button < _built.Count && _built[(int)button] ? (IResult)new FailedResult("The weapon already is this build.", 0) : SuccessfulResult.New;
 
 		public override void ExecuteInteractionInternal(EBuildPreset interaction)
 		{
