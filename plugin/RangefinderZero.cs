@@ -27,6 +27,7 @@ namespace CustomRpTweaks.Client
 	{
 		private static float _reading = -1f;
 		private static TacticalRangeFinderController _source;
+		private static string _lastUnparsed;
 
 		// The display shows "0437" or "437.5", with markup around the digits (and "----" when nothing is hit)
 		private static readonly Regex Number = new Regex(@"\d+(\.\d+)?", RegexOptions.Compiled);
@@ -50,6 +51,12 @@ namespace CustomRpTweaks.Client
 			else
 			{
 				_reading = -1f;
+				// What the display says when it has no distance ("----" is the usual); noted once per different text
+				if (text != _lastUnparsed)
+				{
+					_lastUnparsed = text;
+					Plugin.Verbose($"Rangefinder display shows no distance: \"{text}\"");
+				}
 			}
 		}
 
@@ -152,6 +159,7 @@ namespace CustomRpTweaks.Client
 			}
 
 			var current = sight.GetCurrentOpticCalibrationPointIndex(scope);
+			Plugin.Verbose($"Zero from rangefinder: reading {_reading:0.0} m, rounding {Plugin.RangefinderZeroRounding.Value}, steps [{string.Join(", ", distances)}], now at index {current}, wanted index {target}");
 			if (current == target)
 			{
 				Say($"already zeroed at {distances[target]} m (reading {_reading:0} m).");
@@ -172,6 +180,7 @@ namespace CustomRpTweaks.Client
 			}
 
 			var now = sight.GetCurrentOpticCalibrationPointIndex(scope);
+			Plugin.Verbose($"Zero from rangefinder: ended at index {now}");
 			Say(now == target ? $"zero set to {distances[target]} m (reading {_reading:0} m)." : $"could only reach {distances[now]} m (reading {_reading:0} m).");
 		}
 	}
