@@ -380,6 +380,48 @@ namespace CustomRpTweaks.Client
 			new OverstockPricePatches.FleaBarterCountPatch().Enable();
 
 			ServerTime.Setup(Config);
+			SortEntries();
+		}
+
+		// F12 lists the sections and settings in the order they were bound, not by name, so the entries are put in order here: sections by
+		// name (they are numbered), settings by the number in front of their name (so 10 comes after 9)
+		private void SortEntries()
+		{
+			try
+			{
+				var entries = typeof(ConfigFile).GetProperty("Entries", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(Config, null)
+					as System.Collections.Generic.Dictionary<ConfigDefinition, ConfigEntryBase>;
+				if (entries == null)
+				{
+					Log.LogWarning("Config entries not found, F12 keeps the order they were bound in.");
+					return;
+				}
+
+				var sorted = entries.OrderBy(pair => pair.Key.Section, System.StringComparer.Ordinal)
+					.ThenBy(pair => LeadingNumber(pair.Key.Key))
+					.ThenBy(pair => pair.Key.Key, System.StringComparer.Ordinal)
+					.ToList();
+				entries.Clear();
+				foreach (var pair in sorted)
+				{
+					entries.Add(pair.Key, pair.Value);
+				}
+			}
+			catch (System.Exception e)
+			{
+				Log.LogWarning("Couldn't sort the config entries: " + e.Message);
+			}
+		}
+
+		private static int LeadingNumber(string key)
+		{
+			var end = 0;
+			while (end < key.Length && char.IsDigit(key[end]))
+			{
+				end++;
+			}
+
+			return end > 0 && int.TryParse(key.Substring(0, end), out var number) ? number : int.MaxValue;
 		}
 	}
 }
