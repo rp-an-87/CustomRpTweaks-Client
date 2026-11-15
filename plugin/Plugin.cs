@@ -46,7 +46,7 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<bool> HideoutBuyTools;
 		internal static ConfigEntry<bool> HideoutFuelRefill;
 		internal static ConfigEntry<KeyboardShortcut> RangefinderZeroHotkey;
-		internal static ConfigEntry<float> RangefinderZeroMaxAge;
+		internal static ConfigEntry<RangefinderRounding> RangefinderZeroRounding;
 		internal static ConfigEntry<bool> BipodRelax;
 		internal static ConfigEntry<bool> BipodAnySurface;
 		internal static ConfigEntry<float> BipodClearance;
@@ -234,9 +234,9 @@ namespace CustomRpTweaks.Client
 			HideoutFuelRefill = Config.Bind("02. Hideout", "4. Refill button on the generator and water collector slots", true,
 				"A Refill button over a generator fuel slot or the water collector's filter slot that is empty or whose contents ran out (the water collector takes Water filters: the same rules, with only the one item). It buys one full fuel tank on the flea market (traders' offers included, the cheapest full one) and puts it in the slot; the empty tank goes back to your stash. It first uses a tank already in your stash that still has fuel (Metal before Expeditionary, the fullest first). Otherwise it buys, in order: a Metal fuel tank at a normal price, an Expeditionary fuel tank at a normal price, then (nothing at a normal price) a Metal tank at an overstock price, then an Expeditionary one. The button's text is white at a normal price, orange at an overstock price, red when nothing can be bought or paid for. Hover the button for what it would buy and cost (an overstock price is shown in orange with the normal price). Takes effect the next time the fuel screen is opened.");
 			RangefinderZeroHotkey = Config.Bind("19. Aiming", "2. Zero from rangefinder hotkey", new KeyboardShortcut(KeyCode.PageUp, KeyCode.LeftAlt),
-				"While aiming through a sight, press this to set its zero to the distance your rangefinder last showed (the display on a weapon, such as the RAPTAR, or the handheld one), rounded to the nearest zero step the sight offers (half way between two goes to the longer one). It uses the game's own zeroing steps, so it only works while aiming. Unassign the key to turn the feature off.");
-			RangefinderZeroMaxAge = Config.Bind("19. Aiming", "3. Rangefinder reading stays valid for (seconds)", 30f,
-				new ConfigDescription("A rangefinder reading older than this is not used by the zero hotkey: aim the rangefinder at the target again. The display measures twice a second while it is on and in view.", new AcceptableValueRange<float>(1f, 600f)));
+				"While aiming through a sight, press this to set its zero to the distance the rangefinder attached to your weapon (such as the RAPTAR) shows, rounded down or up (see the next setting) to a zero step the sight offers. The rangefinder must be switched on and its display in use; the handheld rangefinder is not used. It uses the game's own zeroing steps, so it only works while aiming. Unassign the key to turn the feature off.");
+			RangefinderZeroRounding = Config.Bind("19. Aiming", "3. Zero from rangefinder: rounding", RangefinderRounding.Down,
+				"Which zero step the hotkey picks when the rangefinder's distance is between two. Down: the step at or below the distance (a 437 m reading with 50 m steps gives 400 m). Up: the step at or above it (450 m). Past the first or last step of the sight, that step is used.");
 			BipodRelax = Config.Bind("19. Aiming", "4. Relax deploying a bipod while prone", true,
 				"The game only lets you deploy a bipod prone on ground it counts very strictly: low-poly terrain, nothing within 20 cm of the spot, ground right under the bipod and nearly level. With this on, the search uses the settings below instead (the bipod then rests on what it finds, which may not look perfect). Off: the game's own rules. Takes effect on the next deploy.");
 			BipodAnySurface = Config.Bind("19. Aiming", "5. Bipod: other surfaces count as ground", true,

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using EFT;
@@ -9,14 +10,22 @@ using UnityEngine;
 
 namespace CustomRpTweaks.Client
 {
-	// Hotkey: sets the zero of the sight you are aiming through to the distance your rangefinder last showed, rounded to the nearest step
-	// the sight offers (half way between two steps goes to the longer one). The reading is taken from the rangefinder's own display
-	// (the one on a weapon, such as the RAPTAR, or the handheld one) every time it measures; a reading older than the setting, or a
-	// display that shows no distance, is not used. It steps the zero the way the game's own zeroing keys do, so it only works while aiming.
+	internal enum RangefinderRounding
+	{
+		[System.ComponentModel.Description("Down")]
+		Down,
+
+		[System.ComponentModel.Description("Up")]
+		Up
+	}
+
+	// Hotkey: sets the zero of the sight you are aiming through to the distance the rangefinder attached to your weapon (a RAPTAR) shows,
+	// rounded down (or up, a setting) to a step the sight offers. It only listens to a rangefinder built into a device on the weapon in your
+	// hands, that is switched on and whose display is in use; the handheld rangefinder is not used, and a display that shows no distance
+	// gives no reading. It steps the zero the way the game's own zeroing keys do, so it only works while aiming.
 	internal static class RangefinderZero
 	{
 		private static float _reading = -1f;
-		private static float _readingAt;
 		private static TacticalRangeFinderController _source;
 
 		// The display shows "0437" or "437.5", with markup around the digits (and "----" when nothing is hit)
@@ -25,12 +34,17 @@ namespace CustomRpTweaks.Client
 
 		internal static void Record(TacticalRangeFinderController controller)
 		{
+			// Only a rangefinder on the weapon in your hands counts (not the handheld one, nor another character's weapon)
+			if (!IsOnYourWeapon(controller))
+			{
+				return;
+			}
+
 			var text = controller == null || controller._textOnDisplay == null ? null : controller._textOnDisplay.text;
 			var match = string.IsNullOrEmpty(text) ? null : Number.Match(Markup.Replace(text, string.Empty));
 			if (match != null && match.Success && float.TryParse(match.Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var metres))
 			{
 				_reading = metres;
-				_readingAt = Time.realtimeSinceStartup;
 				_source = controller;
 			}
 			else
@@ -39,17 +53,35 @@ namespace CustomRpTweaks.Client
 			}
 		}
 
-		// The display that gave the reading is still on: its object is active, and a rangefinder built into a tactical device (the RAPTAR) has
-		// that device switched on
-		private static bool SourceIsOn()
+		// The rangefinder is built into a tactical device (the RAPTAR) that is part of the weapon in your hands
+		private static bool IsOnYourWeapon(TacticalRangeFinderController controller)
 		{
-			if (_source == null || !_source.isActiveAndEnabled)
+			if (controller == null)
 			{
 				return false;
 			}
 
-			var device = _source.GetComponentInParent<TacticalComboVisualController>();
-			return device == null || device.LightMod == null || device.LightMod.IsActive;
+			var device = controller.GetComponentInParent<TacticalComboVisualController>();
+			var player = GamePlayerOwner.MyPlayer;
+			var weapon = player == null ? null : (player.HandsController as Player.FirearmController)?.Item;
+			return device != null && device.LightMod != null && weapon != null && weapon.GetAllItemsFromCollection().Any(item => item == device.LightMod.Item);
+		}
+
+		// The rangefinder that gave the reading is switched on, still on your weapon, and its display is in use (it draws only while the
+		// weapon is up near the camera)
+		private static bool SourceIsOn()
+		{
+			if (_source == null || !_source.isActiveAndEnabled || !IsOnYourWeapon(_source))
+			{
+				return false;
+			}
+
+			if (_source._canvas != null && !_source._canvas.enabled)
+			{
+				return false;
+			}
+
+			return _source.GetComponentInParent<TacticalComboVisualController>().LightMod.IsActive;
 		}
 
 		private static void Say(string message) => NotificationManager.DisplayMessageNotification("Zero from rangefinder: " + message);
@@ -68,15 +100,15 @@ namespace CustomRpTweaks.Client
 				return;
 			}
 
-			if (_reading >= 0f && !SourceIsOn())
+			if (_reading < 0f)
 			{
-				Say("the rangefinder is off.");
+				Say("no reading (switch on the rangefinder on your weapon and aim it at the target).");
 				return;
 			}
 
-			if (_reading < 0f || Time.realtimeSinceStartup - _readingAt > Plugin.RangefinderZeroMaxAge.Value)
+			if (!SourceIsOn())
 			{
-				Say("no recent reading (aim the rangefinder at the target first).");
+				Say("the rangefinder on your weapon is off or its display is not in use.");
 				return;
 			}
 
@@ -95,15 +127,27 @@ namespace CustomRpTweaks.Client
 				return;
 			}
 
-			// The nearest step; half way between two goes to the longer one
-			var target = 0;
-			for (var i = 1; i < distances.Length; i++)
+			// The step at or below the reading (or at or above it, by the setting); past the ends of the list, the end
+			var up = Plugin.RangefinderZeroRounding.Value == RangefinderRounding.Up;
+			var target = -1;
+			for (var i = 0; i < distances.Length; i++)
 			{
-				var better = Math.Abs(distances[i] - _reading);
-				var best = Math.Abs(distances[target] - _reading);
-				if (better < best || (better == best && distances[i] > distances[target]))
+				var fits = up ? distances[i] >= _reading : distances[i] <= _reading;
+				if (fits && (target < 0 || (up ? distances[i] < distances[target] : distances[i] > distances[target])))
 				{
 					target = i;
+				}
+			}
+
+			if (target < 0)
+			{
+				target = 0;
+				for (var i = 1; i < distances.Length; i++)
+				{
+					if (up ? distances[i] > distances[target] : distances[i] < distances[target])
+					{
+						target = i;
+					}
 				}
 			}
 
