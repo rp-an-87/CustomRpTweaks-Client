@@ -168,6 +168,7 @@ namespace CustomRpTweaks.Client
 
 			// One button, or "Hand in: quest name" for each when several quests want it. Each new button goes to the top, so they are added
 			// last to first.
+			Blocked.Clear();
 			var refusal = Refusal(item);
 			if (refusal != null)
 			{
