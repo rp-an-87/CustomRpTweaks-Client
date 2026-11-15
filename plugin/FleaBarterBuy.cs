@@ -450,6 +450,8 @@ namespace CustomRpTweaks.Client
 			var profile = ragfair._tradingSession.Profile;
 			var search = new Dictionary<string, List<Offer>>();
 			var plan = await MakePlan(ragfair, profile, src, search, null);
+			var wallet = Wallet(profile.Inventory.Stash.GetAllItemsFromCollection());
+			var held = await MakePlan(ragfair, profile, src, search, new Dictionary<ECurrencyType, long>(wallet));
 			var lines = new List<string>();
 
 			var unsellable = src.UnbuyableBlocks ? plan.Needs.Where(need => need.CannotBuy).ToList() : new List<Need>();
@@ -477,10 +479,14 @@ namespace CustomRpTweaks.Client
 				return string.Join("\n", lines);
 			}
 
+			// What you can pay for is what is shown (cheapest by value among the currencies you hold); otherwise what it would cost
+			if (held.Problems.Count == 0)
+			{
+				plan = held;
+			}
+
 			lines.Add("<b>Will buy:</b> " + string.Join(", ", plan.Needs.Where(need => need.Bought > 0).Select(need => $"<b>{need.Bought}</b> {need.Name}" + (need.Spare > 0 ? $" (+{need.Spare} spare)" : ""))));
 
-			var wallet = Wallet(profile.Inventory.Stash.GetAllItemsFromCollection());
-			var held = await MakePlan(ragfair, profile, src, search, new Dictionary<ECurrencyType, long>(wallet));
 			var totals = plan.Totals();
 			if (held.Problems.Count == 0)
 			{
@@ -540,6 +546,7 @@ namespace CustomRpTweaks.Client
 		private static async Task<Plan> MakePlan(RagFair ragfair, Profile profile, Source src, Dictionary<string, List<Offer>> search, Dictionary<ECurrencyType, long> budget)
 		{
 			var plan = new Plan();
+			UpdateRates(ragfair);
 			var stash = src.Stash();
 			var mode = src.Buying;
 
@@ -594,6 +601,40 @@ namespace CustomRpTweaks.Client
 
 			return plan;
 		}
+		// What one unit of each currency is worth in roubles, from the traders' own currency courses (the game converts with them too);
+		// refreshed whenever a plan is made. Unknown: a dollar or euro counts as dear, so its offers come after the rouble ones.
+		private static readonly Dictionary<ECurrencyType, double> Rates = new Dictionary<ECurrencyType, double>
+		{
+			{ ECurrencyType.RUB, 1d }, { ECurrencyType.USD, 1000d }, { ECurrencyType.EUR, 1000d }
+		};
+
+		private static void UpdateRates(RagFair ragfair)
+		{
+			try
+			{
+				var courses = ragfair._tradingSession.Traders.Select(trader => trader.CurrencyCourses).FirstOrDefault(map => map != null && map.Count > 0);
+				if (courses == null)
+				{
+					return;
+				}
+
+				foreach (var currency in new[] { ECurrencyType.USD, ECurrencyType.EUR })
+				{
+					if (courses.TryGetValue(CurrencyUtil.GetCurrencyId(currency).ToString(), out var rate) && rate > 0)
+					{
+						Rates[currency] = rate;
+					}
+				}
+			}
+			catch (Exception e)
+			{
+				Plugin.Verbose($"Quick buy: no currency courses ({e.Message})");
+			}
+		}
+
+		// What a piece of the offer costs in roubles, whatever it is paid in: the one measure the offers are ranked by
+		private static double Value(Offer offer) => UnitPrice(offer) * Rates[offer.MoneyType];
+
 		private static double UnitPrice(Offer offer) => offer.SellInOnePiece ? offer.Requirements[0].PreciseCount / Math.Max(1, offer.Quantity) : offer.Requirements[0].PreciseCount;
 
 		private static void Take(Need need, Offer offer, int count)
@@ -604,12 +645,13 @@ namespace CustomRpTweaks.Client
 
 		// The cheapest offers first, per piece. A pack sold in one piece is only taken whole, and only when it fits in what is still needed;
 		// if packs are all that is left, the cheapest pack that covers it is bought whole (the rest of it is spare).
-		// Roubles first, then dollars, then euro: the others only for what the roubles can't cover. budget is what you hold of each
+		// Cheapest by value in roubles, whatever the currency (a dollar offer under the next rouble one wins); an offer in a currency you
+		// don't hold enough of is skipped, so the next one is taken. budget is what you hold of each
 		// currency (spent as offers are taken), or null for no limit.
 		private static bool Allocate(Need need, List<Offer> offers, Dictionary<ECurrencyType, long> budget)
 		{
 			var remaining = need.ToBuy;
-			var sorted = offers.OrderBy(offer => Array.IndexOf(Currencies, offer.MoneyType)).ThenBy(UnitPrice).ThenBy(offer => offer.IntId).ToList();
+			var sorted = offers.OrderBy(Value).ThenBy(offer => offer.IntId).ToList();
 			foreach (var offer in sorted)
 			{
 				if (remaining <= 0)
@@ -645,7 +687,7 @@ namespace CustomRpTweaks.Client
 			if (remaining > 0)
 			{
 				var pack = sorted.Where(offer => offer.SellInOnePiece && offer.CurrentItemCount >= remaining && need.Picks.All(pick => pick.Offer != offer))
-					.OrderBy(offer => Array.IndexOf(Currencies, offer.MoneyType)).ThenBy(offer => offer.Requirements[0].PreciseCount)
+					.OrderBy(offer => offer.Requirements[0].PreciseCount * Rates[offer.MoneyType])
 					.FirstOrDefault(offer => Pay(budget, offer, offer.CurrentItemCount));
 				if (pack != null)
 				{
