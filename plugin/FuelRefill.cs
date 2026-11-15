@@ -19,7 +19,7 @@ namespace CustomRpTweaks.Client
 	// "Refill" on the generator's fuel slots: a button over a slot that is empty or whose fuel ran out. It buys one full fuel tank on the
 	// flea market (traders' offers included, the cheapest full one) and puts it in the slot the way the slot's own dropdown would: the empty
 	// tank goes back to the stash, the new one takes its place.
-	// What it buys, in order: a Metal fuel tank at a normal price, an Expeditionary fuel tank at a normal price, then (nothing is for sale at
+	// First it uses a tank that is already in the stash (any with fuel left: Metal before Expeditionary, the fullest first). Otherwise it buys, in order: a Metal fuel tank at a normal price, an Expeditionary fuel tank at a normal price, then (nothing is for sale at
 	// a normal price) a Metal tank at an overstock price (a price the server's trader overstock raised), then an Expeditionary one.
 	// The button's text is white when the purchase is at a normal price, orange at an overstock price, red when nothing can be bought.
 	internal static class FuelRefill
@@ -33,6 +33,7 @@ namespace CustomRpTweaks.Client
 		private class Choice
 		{
 			public Offer Offer;
+			public Item Stock;                                            // a tank from the stash, nothing is bought
 			public int Tank;
 			public long Price;
 			public long BasePrice;
@@ -41,7 +42,7 @@ namespace CustomRpTweaks.Client
 			public bool Overstock;
 			public string Problem;
 			public readonly List<string> Notes = new List<string>();      // why a tank that comes earlier in the order was not bought
-			public bool CanBuy => Offer != null;
+			public bool CanBuy => Offer != null || Stock != null;
 			public string Name => TankNames[Tank];
 		}
 
@@ -66,6 +67,29 @@ namespace CustomRpTweaks.Client
 		{
 			var resource = offer.Item == null ? null : offer.Item.GetItemComponent<ResourceComponent>();
 			return resource == null ? 0f : resource.MaxResource;
+		}
+
+		private static float FuelOf(Item item)
+		{
+			var resource = item.GetItemComponent<ResourceComponent>();
+			return resource == null ? 0f : resource.Value;
+		}
+
+		// Tanks in the stash with fuel left: Metal before Expeditionary, the fullest first
+		private static Item StockedTank(List<Item> stash, out int tank)
+		{
+			for (tank = 0; tank < Tanks.Length; tank++)
+			{
+				var id = Tanks[tank];
+				var found = stash.Where(item => item != null && item.StringTemplateId == id && FuelOf(item) > Mathf.Epsilon).OrderByDescending(FuelOf).FirstOrDefault();
+				if (found != null)
+				{
+					return found;
+				}
+			}
+
+			tank = 0;
+			return null;
 		}
 
 		// A trader's offer whose price the server's overstock raised (the same test as the flea market rows use); other players' offers never are
@@ -109,8 +133,15 @@ namespace CustomRpTweaks.Client
 
 		// The cheapest full tank at a price you can pay, by the order in the header comment. Each tank's offers are split into those at a
 		// normal price and those the overstock raised.
-		private static async Task<Choice> Choose(RagFair ragfair, Dictionary<ECurrencyType, long> wallet)
+		private static async Task<Choice> Choose(RagFair ragfair, List<Item> stash)
 		{
+			var stocked = StockedTank(stash, out var stockedTank);
+			if (stocked != null)
+			{
+				return new Choice { Stock = stocked, Tank = stockedTank, Capacity = stocked.GetItemComponent<ResourceComponent>().MaxResource };
+			}
+
+			var wallet = FleaBarterBuy.Wallet(stash);
 			var profile = ragfair._tradingSession.Profile;
 			FleaBarterBuy.UpdateRates(ragfair);
 			var normal = new List<Offer>[Tanks.Length];
@@ -190,7 +221,7 @@ namespace CustomRpTweaks.Client
 
 			_currentKey = key;
 			_currentAt = Time.realtimeSinceStartup;
-			_current = Choose(ragfair, FleaBarterBuy.Wallet(StashOf(ragfair)));
+			_current = Choose(ragfair, StashOf(ragfair));
 			return _current;
 		}
 
@@ -207,6 +238,11 @@ namespace CustomRpTweaks.Client
 			if (!choice.CanBuy)
 			{
 				return $"<b><color={FleaBarterBuy.Red}>Can't refill:</color></b> " + choice.Problem;
+			}
+
+			if (choice.Stock != null)
+			{
+				return $"<b>Will use:</b> the <b>{choice.Name}</b> in your stash ({Mathf.CeilToInt(FuelOf(choice.Stock))}/{choice.Capacity:0} fuel)\n<size=85%><color={FleaBarterBuy.Grey}>Nothing is bought." + (replacing ? " The empty tank in the slot goes to your stash." : string.Empty) + "</color></size>";
 			}
 
 			var lines = new List<string>();
@@ -245,7 +281,9 @@ namespace CustomRpTweaks.Client
 				return "none";
 			}
 
-			return replacing + ":" + string.Join(",", FleaBarterBuy.Wallet(StashOf(ragfair)).Select(pair => pair.Key + "=" + pair.Value));
+			var stash = StashOf(ragfair);
+			var tanks = stash.Where(item => item != null && Array.IndexOf(Tanks, item.StringTemplateId) >= 0 && FuelOf(item) > Mathf.Epsilon).Select(item => item.Id + "=" + Mathf.CeilToInt(FuelOf(item)));
+			return replacing + ":" + string.Join(",", FleaBarterBuy.Wallet(stash).Select(pair => pair.Key + "=" + pair.Value)) + "|" + string.Join(",", tanks);
 		}
 
 		internal static void Start(FuelSelectionCell cell)
@@ -273,46 +311,50 @@ namespace CustomRpTweaks.Client
 			// Always from fresh offers: this one spends money
 			_current = null;
 			var stash = StashOf(ragfair);
-			var choice = await Choose(ragfair, FleaBarterBuy.Wallet(stash));
+			var choice = await Choose(ragfair, stash);
 			if (!choice.CanBuy)
 			{
 				FleaBarterBuy.Notify("Refill: nothing bought. " + choice.Problem + ".");
 				return;
 			}
 
-			var before = new HashSet<string>(stash.Select(item => item.Id.ToString()));
-			var failure = await FleaBarterBuy.Purchase(ragfair, stash, new Dictionary<IExchangeable, int> { { choice.Offer, 1 } });
-			if (failure != null)
+			Item bought = choice.Stock;
+			if (bought == null)
 			{
-				FleaBarterBuy.Notify(failure.Replace("Quick buy:", "Refill:"));
-				return;
-			}
-
-			_current = null;
-
-			// The tank should be in the stash as the purchase returns; give the game a moment if not
-			Item bought = null;
-			for (var attempt = 0; attempt < 15 && bought == null; attempt++)
-			{
-				bought = StashOf(ragfair).FirstOrDefault(item => item.StringTemplateId == Tanks[choice.Tank] && !before.Contains(item.Id.ToString()));
-				if (bought == null)
+				var before = new HashSet<string>(stash.Select(item => item.Id.ToString()));
+				var failure = await FleaBarterBuy.Purchase(ragfair, stash, new Dictionary<IExchangeable, int> { { choice.Offer, 1 } });
+				if (failure != null)
 				{
-					await Task.Delay(200);
+					FleaBarterBuy.Notify(failure.Replace("Quick buy:", "Refill:"));
+					return;
+				}
+
+				_current = null;
+
+				// The tank should be in the stash as the purchase returns; give the game a moment if not
+				for (var attempt = 0; attempt < 15 && bought == null; attempt++)
+				{
+					bought = StashOf(ragfair).FirstOrDefault(item => item.StringTemplateId == Tanks[choice.Tank] && !before.Contains(item.Id.ToString()));
+					if (bought == null)
+					{
+						await Task.Delay(200);
+					}
 				}
 			}
 
-			var price = Money(choice.Currency, choice.Price, false);
+			var stocked = choice.Stock != null;
+			var price = stocked ? string.Empty : " for " + Money(choice.Currency, choice.Price, false);
 			var what = choice.Name + (choice.Tank > 0 ? $" instead of the {TankNames[0]}" : string.Empty) + (choice.Overstock ? " at an overstock price" : string.Empty);
 			if (bought == null)
 			{
-				FleaBarterBuy.Notify($"Refill: bought a {what} for {price}, but it is not in your stash yet. Put it in the slot yourself.");
+				FleaBarterBuy.Notify($"Refill: bought a {what}{price}, but it is not in your stash yet. Put it in the slot yourself.");
 				return;
 			}
 
 			RefreshHideout();
 			if (cell == null || !cell.isActiveAndEnabled)
 			{
-				FleaBarterBuy.Notify($"Refill: bought a {what} for {price}. The screen was closed, so it is in your stash.");
+				FleaBarterBuy.Notify($"Refill: {(stocked ? "took" : "bought")} a {what}{price}. The screen was closed, so it is in your stash.");
 				return;
 			}
 
@@ -320,8 +362,8 @@ namespace CustomRpTweaks.Client
 			cell.ItemSelected(bought);
 			var filled = cell.FuelItem != null && cell.FuelItem.Value > Mathf.Epsilon;
 			FleaBarterBuy.Notify(filled
-				? $"Refill: bought a {what} for {price} and put it in the slot."
-				: $"Refill: bought a {what} for {price}, but the slot could not take it (is the stash full?). It is in your stash.");
+				? (stocked ? $"Refill: put the {what} from your stash in the slot." : $"Refill: bought a {what}{price} and put it in the slot.")
+				: $"Refill: {(stocked ? "took" : "bought")} a {what}{price}, but the slot could not take it (is the stash full?). It is in your stash.");
 
 			// What the other buttons say has changed (the money, the offers)
 			foreach (var placer in UnityEngine.Object.FindObjectsOfType<FuelRefillPlacer>())
