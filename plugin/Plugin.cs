@@ -45,6 +45,8 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<QuickBuyMode> HideoutBuyMode;
 		internal static ConfigEntry<bool> HideoutBuyTools;
 		internal static ConfigEntry<bool> HideoutFuelRefill;
+		internal static ConfigEntry<KeyboardShortcut> RangefinderZeroHotkey;
+		internal static ConfigEntry<float> RangefinderZeroMaxAge;
 		internal static ConfigEntry<bool> KeepTopRowsFree;
 		internal static ConfigEntry<int> TopRowsToKeepFree;
 		internal static ConfigEntry<bool> KeepSpeedWhileZooming;
@@ -107,6 +109,7 @@ namespace CustomRpTweaks.Client
 			EquipPlate.Update();
 			SplitStack.Update();
 			ServerTime.Update();
+			RangefinderZero.Update();
 		}
 
 		// A renamed setting takes over the value it had under its old name, if the config file still has one
@@ -224,6 +227,11 @@ namespace CustomRpTweaks.Client
 				"The buy button also buys the tools of the craft (the wrench-marked requirements, which are reused and not used up) that you don't have. A tool you hold is never bought again, in any mode. Off: tools are left out, the craft still needs them in your stash.");
 			HideoutFuelRefill = Config.Bind("02. Hideout", "4. Refill button on the generator and water collector slots", true,
 				"A Refill button over a generator fuel slot or the water collector's filter slot that is empty or whose contents ran out (the water collector takes Water filters: the same rules, with only the one item). It buys one full fuel tank on the flea market (traders' offers included, the cheapest full one) and puts it in the slot; the empty tank goes back to your stash. It first uses a tank already in your stash that still has fuel (Metal before Expeditionary, the fullest first). Otherwise it buys, in order: a Metal fuel tank at a normal price, an Expeditionary fuel tank at a normal price, then (nothing at a normal price) a Metal tank at an overstock price, then an Expeditionary one. The button's text is white at a normal price, orange at an overstock price, red when nothing can be bought or paid for. Hover the button for what it would buy and cost (an overstock price is shown in orange with the normal price). Takes effect the next time the fuel screen is opened.");
+			RangefinderZeroHotkey = Config.Bind("19. Aiming", "2. Zero from rangefinder hotkey", new KeyboardShortcut(KeyCode.PageUp, KeyCode.LeftAlt),
+				"While aiming through a sight, press this to set its zero to the distance your rangefinder last showed (the display on a weapon, such as the RAPTAR, or the handheld one), rounded to the nearest zero step the sight offers (half way between two goes to the longer one). It uses the game's own zeroing steps, so it only works while aiming. Unassign the key to turn the feature off.");
+			RangefinderZeroMaxAge = Config.Bind("19. Aiming", "3. Rangefinder reading stays valid for (seconds)", 30f,
+				new ConfigDescription("A rangefinder reading older than this is not used by the zero hotkey: aim the rangefinder at the target again. The display measures twice a second while it is on and in view.", new AcceptableValueRange<float>(1f, 600f)));
+			new RangefinderReadingPatch().Enable();
 			new FuelRefillShowPatch().Enable();
 			new FuelRefillUpdatePatch().Enable();
 			new HideoutQuickBuy.BuyMaterialsPatch().Enable();
