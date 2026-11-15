@@ -44,6 +44,7 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<bool> HideoutQuickBuy;
 		internal static ConfigEntry<QuickBuyMode> HideoutBuyMode;
 		internal static ConfigEntry<bool> HideoutBuyTools;
+		internal static ConfigEntry<bool> HideoutFuelRefill;
 		internal static ConfigEntry<bool> KeepTopRowsFree;
 		internal static ConfigEntry<int> TopRowsToKeepFree;
 		internal static ConfigEntry<bool> KeepSpeedWhileZooming;
@@ -221,6 +222,10 @@ namespace CustomRpTweaks.Client
 				"What the buy button buys. Buy all: everything the craft asks for, whatever you hold. Buy missing: only what you don't hold. Buy missing, found-in-raid items don't count: like Buy missing, but your found-in-raid items are not counted as held, so they are kept (the craft takes items that are not found in raid first).");
 			HideoutBuyTools = Config.Bind("02. Hideout", "3. Buy missing tools too", true,
 				"The buy button also buys the tools of the craft (the wrench-marked requirements, which are reused and not used up) that you don't have. A tool you hold is never bought again, in any mode. Off: tools are left out, the craft still needs them in your stash.");
+			HideoutFuelRefill = Config.Bind("02. Hideout", "4. Refill button on the generator fuel slots", true,
+				"A Refill button over a generator fuel slot that is empty or whose fuel ran out. It buys one full fuel tank on the flea market (traders' offers included, the cheapest full one) and puts it in the slot; the empty tank goes back to your stash. A Metal fuel tank is preferred; if none is for sale, an Expeditionary fuel tank is bought instead (the tooltip and the message say so). If neither is for sale, or you can't pay, nothing is bought. Hover the button for what it would buy and cost. Takes effect the next time the fuel screen is opened.");
+			new FuelRefillShowPatch().Enable();
+			new FuelRefillUpdatePatch().Enable();
 			new HideoutQuickBuy.BuyMaterialsPatch().Enable();
 			new HideoutQuickBuy.StartButtonPatch().Enable();
 			new HideoutQuickBuy.BuyTooltipPatch().Enable();

@@ -157,7 +157,7 @@ namespace CustomRpTweaks.Client
 
 		private static bool _running;
 
-		private static void Notify(string message) => NotificationManager.DisplayMessageNotification(message);
+		internal static void Notify(string message) => NotificationManager.DisplayMessageNotification(message);
 
 		private static string Amount(ECurrencyType currency, long amount) =>
 			amount.ToString("N0", CultureInfo.InvariantCulture).Replace(",", " ") + (currency == ECurrencyType.RUB ? " roubles" : currency == ECurrencyType.USD ? " USD" : currency == ECurrencyType.EUR ? " EUR" : " " + currency);
@@ -165,7 +165,7 @@ namespace CustomRpTweaks.Client
 		private static readonly ECurrencyType[] Currencies = { ECurrencyType.RUB, ECurrencyType.USD, ECurrencyType.EUR };
 
 		// What you hold of each currency the flea market is paid in (money that is locked doesn't count)
-		private static Dictionary<ECurrencyType, long> Wallet(IEnumerable<Item> items)
+		internal static Dictionary<ECurrencyType, long> Wallet(IEnumerable<Item> items)
 		{
 			var money = items.OfType<Money>().Where(coin => coin.PinLockState != EItemPinLockState.Locked).ToList();
 			return Currencies.ToDictionary(currency => currency, currency =>
@@ -281,32 +281,11 @@ namespace CustomRpTweaks.Client
 					goods[pick.Offer] = pick.Count;
 				}
 
-				var references = HandoverExtensions.RecalculateReferences(stash, goods);
-				var commodities = new CommoditiesToPurchase();
-				foreach (var pair in goods)
+				var failure = await Purchase(ragfair, stash, goods);
+				if (failure != null)
 				{
-					var money = references[pair.Key].ItemsToHandover
-						.Where(entry => entry.Value > 0 && CurrencyUtil.IsCurrencyId(entry.Key.TemplateId))
-						.Select(entry => new ItemReference { Id = entry.Key.Id, TemplateId = entry.Key.TemplateId, ExistingCount = entry.Value })
-						.ToList();
-					commodities.Add(new CommodityToPurchase(pair.Key, pair.Key.SellInOnePiece ? pair.Key.CurrentItemCount : pair.Value, money));
-				}
-
-				var result = await ragfair.Purchase(commodities);
-				if (!result.Succeed)
-				{
-					Notify($"Quick buy: the flea market refused the purchase (code {result.ErrorCode}), the offers have probably changed. Try again.");
+					Notify(failure);
 					return false;
-				}
-
-				// The game's own sound of a completed trade
-				try
-				{
-					Singleton<GUISounds>.Instance.PlayUISound(EUISoundType.TradeOperationComplete);
-				}
-				catch (Exception e)
-				{
-					Plugin.Verbose($"Quick buy: no purchase sound ({e.Message})");
 				}
 			}
 
@@ -362,6 +341,40 @@ namespace CustomRpTweaks.Client
 			await screen.PerformPurchase(barter);
 			return true;
 		}
+		// Buys the offers (offer and how many of it) with the money in the stash, the game's own purchase request. Null when it went through,
+		// otherwise what to tell the player.
+		internal static async Task<string> Purchase(RagFair ragfair, List<Item> stash, Dictionary<IExchangeable, int> goods)
+		{
+			var references = HandoverExtensions.RecalculateReferences(stash, goods);
+			var commodities = new CommoditiesToPurchase();
+			foreach (var pair in goods)
+			{
+				var money = references[pair.Key].ItemsToHandover
+					.Where(entry => entry.Value > 0 && CurrencyUtil.IsCurrencyId(entry.Key.TemplateId))
+					.Select(entry => new ItemReference { Id = entry.Key.Id, TemplateId = entry.Key.TemplateId, ExistingCount = entry.Value })
+					.ToList();
+				commodities.Add(new CommodityToPurchase(pair.Key, pair.Key.SellInOnePiece ? pair.Key.CurrentItemCount : pair.Value, money));
+			}
+
+			var result = await ragfair.Purchase(commodities);
+			if (!result.Succeed)
+			{
+				return $"Quick buy: the flea market refused the purchase (code {result.ErrorCode}), the offers have probably changed. Try again.";
+			}
+
+			// The game's own sound of a completed trade
+			try
+			{
+				Singleton<GUISounds>.Instance.PlayUISound(EUISoundType.TradeOperationComplete);
+			}
+			catch (Exception e)
+			{
+				Plugin.Verbose($"Quick buy: no purchase sound ({e.Message})");
+			}
+
+			return null;
+		}
+
 		private static bool IsOutOfStockNow(this Offer offer) => offer.TotalItemCount <= 0;
 
 		// What a quote depends on besides the offers: what is asked for now (the server may raise a barter) and what you hold. A quote is
@@ -384,7 +397,7 @@ namespace CustomRpTweaks.Client
 
 			return key.ToString();
 		}
-		private const string Yellow = "#F2C94C", Green = "#6FCF6F", Blue = "#5AA9F2", Red = "#E0554A", Grey = "#9A9A9A";
+		internal const string Yellow = "#F2C94C", Green = "#6FCF6F", Blue = "#5AA9F2", Red = "#E0554A", Grey = "#9A9A9A";
 
 		private static string Number(long amount) => amount.ToString("N0", CultureInfo.InvariantCulture).Replace(",", " ");
 
@@ -396,7 +409,7 @@ namespace CustomRpTweaks.Client
 		}
 
 		// "P 21 321, $ 12 346, E 1 234" with the symbols in their colours (or plain, to be drawn in one colour)
-		private static string Price(Dictionary<ECurrencyType, long> amounts, bool colour) =>
+		internal static string Price(Dictionary<ECurrencyType, long> amounts, bool colour) =>
 			string.Join(", ", Currencies.Where(currency => amounts.TryGetValue(currency, out var value) && value > 0).Select(currency => $"{Symbol(currency, colour)} <b>{Number(amounts[currency])}</b>"));
 
 		private static string Note(string text) => $"<size=85%><color={Grey}>{text}</color></size>";
@@ -614,7 +627,7 @@ namespace CustomRpTweaks.Client
 			{ ECurrencyType.RUB, 1d }, { ECurrencyType.USD, 1000d }, { ECurrencyType.EUR, 1000d }
 		};
 
-		private static void UpdateRates(RagFair ragfair)
+		internal static void UpdateRates(RagFair ragfair)
 		{
 			try
 			{
@@ -639,7 +652,7 @@ namespace CustomRpTweaks.Client
 		}
 
 		// What a piece of the offer costs in roubles, whatever it is paid in: the one measure the offers are ranked by
-		private static double Value(Offer offer) => UnitPrice(offer) * Rates[offer.MoneyType];
+		internal static double Value(Offer offer) => UnitPrice(offer) * Rates[offer.MoneyType];
 
 		private static double UnitPrice(Offer offer) => offer.SellInOnePiece ? offer.Requirements[0].PreciseCount / Math.Max(1, offer.Quantity) : offer.Requirements[0].PreciseCount;
 
@@ -738,7 +751,9 @@ namespace CustomRpTweaks.Client
 		}
 
 		// The offers for one item that can be bought right now: other players' and traders' offers for roubles, dollars or euro, found by the game's own search
-		private static async Task<List<Offer>> FindOffers(RagFair ragfair, Profile profile, IExchangeRequirement requirement)
+		internal static async Task<List<Offer>> FindOffers(RagFair ragfair, Profile profile, IExchangeRequirement requirement) => await FindOffers(ragfair, profile, requirement.TemplateId);
+
+		internal static async Task<List<Offer>> FindOffers(RagFair ragfair, Profile profile, string templateId)
 		{
 			var found = new List<Offer>();
 			var session = ragfair._tradingSession;
@@ -750,7 +765,7 @@ namespace CustomRpTweaks.Client
 			{
 				var response = await session.GetOffers(page, PageSize, (int)ESortType.Price, false, 0, 0, 0, 0, 0, 0, 100, false, true,
 					(int)(withTraders ? EOfferOwnerType.AnyOwnerType : EOfferOwnerType.PlayerOwnerType),
-					true, requirement.TemplateId, string.Empty, string.Empty, new Dictionary<string, int>(), 0, false);
+					true, templateId, string.Empty, string.Empty, new Dictionary<string, int>(), 0, false);
 				if (response.Failed || response.Value == null || response.Value.offers == null)
 				{
 					break;
@@ -759,7 +774,7 @@ namespace CustomRpTweaks.Client
 				foreach (var candidate in response.Value.offers)
 				{
 					if (candidate != null && !candidate.NotAvailable && candidate.CanBeBought && !candidate.Locked && candidate.CurrentItemCount > 0 && candidate.OnlyMoney
-						&& Array.IndexOf(Currencies, candidate.MoneyType) >= 0 && candidate.User != null && candidate.Item != null && candidate.Item.StringTemplateId == requirement.TemplateId)
+						&& Array.IndexOf(Currencies, candidate.MoneyType) >= 0 && candidate.User != null && candidate.Item != null && candidate.Item.StringTemplateId == templateId)
 					{
 						if (candidate.MemberType == EMemberCategory.Trader)
 						{
