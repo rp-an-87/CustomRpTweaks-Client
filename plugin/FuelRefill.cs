@@ -272,8 +272,16 @@ namespace CustomRpTweaks.Client
 
 		private static void Build(FuelSelectionCell cell)
 		{
-			var go = new GameObject(ButtonName, typeof(RectTransform), typeof(Image), typeof(Button), typeof(QuoteHover), typeof(FuelRefillPlacer));
+			var go = new GameObject(ButtonName, typeof(RectTransform), typeof(Image), typeof(Button), typeof(QuoteHover), typeof(FuelRefillPlacer), typeof(LayoutElement));
 			go.transform.SetParent(cell.transform, false);
+			// The slot may arrange its children itself (that put the button under the box); this one is placed by the placer
+			go.GetComponent<LayoutElement>().ignoreLayout = true;
+			// Its own canvas, one above the slot's, so it is drawn over the box and gets the clicks
+			var parentCanvas = cell.GetComponentInParent<Canvas>();
+			var canvas = go.AddComponent<Canvas>();
+			canvas.overrideSorting = true;
+			canvas.sortingOrder = (parentCanvas == null ? 0 : parentCanvas.sortingOrder) + 1;
+			go.AddComponent<GraphicRaycaster>();
 			var placer = go.GetComponent<FuelRefillPlacer>();
 			placer.Cell = cell;
 			placer.Dropdown = cell.DropdownButton == null ? null : cell.DropdownButton.transform as RectTransform;
@@ -323,7 +331,7 @@ namespace CustomRpTweaks.Client
 	// slot): from the left edge of the slot to where its dropdown arrow starts.
 	internal class FuelRefillPlacer : MonoBehaviour
 	{
-		private const float Height = 18f;
+		private const float Height = 30f;
 		private const float Inset = 2f;
 
 		public FuelSelectionCell Cell;
@@ -348,10 +356,14 @@ namespace CustomRpTweaks.Client
 			((RectTransform)Cell.transform).GetWorldCorners(_corners);
 			var left = _corners[1].x;
 			var top = _corners[1].y;
+			var hasDropdown = false;
 			var right = _corners[2].x;
 			if (Dropdown != null)
 			{
 				Dropdown.GetWorldCorners(_corners);
+				// The arrow is as tall as the box and starts at its top: the cell's own top is not (the button ended up under the box)
+				top = _corners[1].y;
+				hasDropdown = true;
 				if (_corners[0].x > left + 1f * scale)
 				{
 					right = Mathf.Min(right, _corners[0].x);
@@ -361,7 +373,7 @@ namespace CustomRpTweaks.Client
 			if (!_logged)
 			{
 				_logged = true;
-				Plugin.Verbose($"Refill button placed: left {left:0.0}, right {right:0.0}, top {top:0.0}, scale {scale:0.00}");
+				Plugin.Verbose($"Refill button placed (dropdown {hasDropdown}): left {left:0.0}, right {right:0.0}, top {top:0.0}, scale {scale:0.00}");
 			}
 
 			var width = (right - left) / scale - 2f * Inset;
