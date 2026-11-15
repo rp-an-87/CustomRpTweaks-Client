@@ -74,7 +74,9 @@ namespace CustomRpTweaks.Client
 
 			if (!(item.QuestItem || CurrencyUtil.IsCurrencyId(item.TemplateId) || item.IsEmpty()))
 			{
-				return "It has items inside (ammo, mods or contents). Empty it first.";
+				var inside = string.Join(", ", ((CompoundItem)item).Grids.SelectMany(grid => grid.Items).Select(content => content.ShortName.Localized()).Distinct().ToArray());
+				Plugin.Log.LogInfo($"Hand in: {item.ShortName.Localized()} counts as not empty, inside: {inside}");
+				return $"It has items inside ({inside}). Empty it first.";
 			}
 
 			return null;
