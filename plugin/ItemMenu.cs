@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using Comfort.Common;
 using EFT.InventoryLogic;
@@ -347,6 +348,33 @@ namespace CustomRpTweaks.Client
 			rect.position = new Vector3(Mathf.Round(rightEdge + rect.pivot.x * width), position.y, position.z);
 		}
 
+		// The submenu of Build has just been shown: each entry gets the hover tooltip (what it would buy and for how much)
+		internal static void AttachBuildTooltips(InteractionButtonsContainer container)
+		{
+			var actions = BuildActions.Current;
+			var sub = SubMenuField?.GetValue(container) as SimpleContextMenu;
+			if (actions == null || sub == null)
+			{
+				return;
+			}
+
+			// The entries are in the order of the builds
+			var buttons = sub.GetComponentsInChildren<SimpleContextMenuButton>(false).Where(button => button.gameObject.activeInHierarchy).ToList();
+			if (buttons.Count != actions.Count)
+			{
+				Plugin.Verbose($"Build menu: {buttons.Count} entries for {actions.Count} builds, no tooltips");
+				return;
+			}
+
+			for (var i = 0; i < buttons.Count; i++)
+			{
+				var index = i;
+				var hover = buttons[i].GetComponent<QuoteHover>() ?? buttons[i].gameObject.AddComponent<QuoteHover>();
+				hover.CacheKey = () => actions.CacheKey(index);
+				hover.Quote = () => actions.Quote(index);
+			}
+		}
+
 		internal static bool IsOurEntry(DynamicContextInteraction interaction) => IsOurs(interaction);
 
 		internal static bool IsWeaponEntry(DynamicContextInteraction interaction) => Pending.TryGetValue(interaction.Id, out var item) && item is Weapon;
@@ -505,6 +533,7 @@ namespace CustomRpTweaks.Client
 			try
 			{
 				ItemMenu.KeepRight(__instance);
+				ItemMenu.AttachBuildTooltips(__instance);
 			}
 			catch (Exception e)
 			{

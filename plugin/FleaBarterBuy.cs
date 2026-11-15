@@ -49,6 +49,7 @@ namespace CustomRpTweaks.Client
 			public Action Refresh;                                                       // tells the screen the stash has changed, after a purchase
 			public bool UnbuyableBlocks;                                                 // something the flea market can't supply stops the buy (barter) or is left to the stash (craft)
 			public QuickBuyMode Setting;
+			public bool ShowHave = true;                                                 // the "You have" list under the tooltip
 			public Mode Buying => Setting == QuickBuyMode.BuyAll ? Mode.All : Mode.Missing;
 			public bool FirAsMissing => Setting == QuickBuyMode.BuyMissingNoFir;
 		}
@@ -434,7 +435,7 @@ namespace CustomRpTweaks.Client
 				have.Add(text);
 			}
 
-			if (have.Count > 0)
+			if (have.Count > 0 && src.ShowHave)
 			{
 				// One line per requirement, so a long list stays readable
 				yield return TooltipSeparators.Line(HotkeyHints.SeparatorLength) + "\n" + Note("<b>You have:</b>\n" + string.Join("\n", have));

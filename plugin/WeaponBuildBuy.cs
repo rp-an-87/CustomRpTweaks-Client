@@ -177,11 +177,126 @@ namespace CustomRpTweaks.Client
 		internal static void Start(InventoryController controller, Weapon weapon, WeaponBuild build) =>
 			FleaBarterBuy.RunGuarded(() => Run(controller, weapon, build));
 
+		// What a build needs, what is there and what is still missing (and where it could come from)
+		internal class Analysis
+		{
+			public WeaponBuild Build;
+			public Weapon Body;
+			public Weapon BuildWeapon;
+			public Dictionary<string, int> Needed;
+			public Dictionary<string, int> Lacking;
+			public Dictionary<string, Mod> Samples;
+			public readonly List<Mod> Borrowed = new List<Mod>();
+			public bool Built;
+			public int ToBuy => Lacking.Values.Sum();
+
+			public FleaBarterBuy.Source Source() => new FleaBarterBuy.Source
+			{
+				Requirements = Lacking.Select(pair => (IExchangeRequirement)new PartRequirement(Samples[pair.Key], pair.Value)).ToArray(),
+				Required = requirement => requirement.IntCount,
+				Suitable = (item, requirement) => false,
+				Stash = () => new List<Item>(),
+				UnbuyableBlocks = true,
+				Setting = QuickBuyMode.BuyAll,
+				ShowHave = false
+			};
+		}
+
+		internal static Analysis Analyze(InventoryController controller, Weapon weapon, WeaponBuild build)
+		{
+			var buildWeapon = build.Item as Weapon;
+			if (buildWeapon == null)
+			{
+				return null;
+			}
+
+			var analysis = new Analysis
+			{
+				Build = build,
+				Body = weapon,
+				BuildWeapon = buildWeapon,
+				Needed = Count(ModsOf(buildWeapon)),
+				Samples = ModsOf(buildWeapon).GroupBy(mod => mod.StringTemplateId).ToDictionary(group => group.Key, group => group.First()),
+				Built = WeaponAssembler.CheckIfAlreadyBuilt(WeaponAssembler.GetInstalledMods(weapon), buildWeapon)
+			};
+
+			var stash = controller.Inventory.Stash.GetAllItemsFromCollection().ToList();
+			analysis.Lacking = Lacking(analysis.Needed, Available(weapon, stash));
+
+			// Parts of other weapons that can go on this one (a setting): taken off after the purchase is worked out
+			if (Plugin.BuildBorrow.Value && analysis.Lacking.Count > 0)
+			{
+				var donors = Donors(weapon, stash);
+				foreach (var template in analysis.Lacking.Keys.ToList())
+				{
+					foreach (var donor in donors.Where(mod => mod.TemplateId == template).Take(analysis.Lacking[template]))
+					{
+						analysis.Borrowed.Add(donor);
+						analysis.Lacking[template]--;
+					}
+
+					if (analysis.Lacking[template] <= 0)
+					{
+						analysis.Lacking.Remove(template);
+					}
+				}
+			}
+
+			return analysis;
+		}
+
+		// The mark after a build's name in the submenu: parts to buy, or already assembled
+		internal static string Indicator(Analysis analysis)
+		{
+			if (analysis == null)
+			{
+				return string.Empty;
+			}
+
+			if (analysis.Built)
+			{
+				return "  <color=#9A9A9A>(built)</color>";
+			}
+
+			return analysis.ToBuy > 0 ? $"  <color=#F2C94C>(buys {analysis.ToBuy})</color>" : string.Empty;
+		}
+
+		// The tooltip of a build in the submenu: whether it buys anything, what and for how much
+		internal static async Task<string> Quote(InventoryController controller, Weapon weapon, WeaponBuild build)
+		{
+			var analysis = Analyze(controller, weapon, build);
+			if (analysis == null)
+			{
+				return "That build has no weapon in it.";
+			}
+
+			var lines = new List<string> { $"<b>{NameOf(build)}</b>" };
+			if (analysis.Built)
+			{
+				lines.Add("The weapon already is this build.");
+				return string.Join("\n", lines);
+			}
+
+			if (analysis.Borrowed.Count > 0)
+			{
+				lines.Add("<b>Takes from other weapons:</b> " + string.Join(", ", analysis.Borrowed.GroupBy(mod => mod.TemplateId).Select(group => $"{group.Count()} {group.First().ShortName.Localized(null)}")));
+			}
+
+			if (analysis.Lacking.Count == 0)
+			{
+				lines.Add("<b>Nothing to buy:</b> every part is in your stash or on the weapon.");
+				return string.Join("\n", lines);
+			}
+
+			lines.Add(await FleaBarterBuy.Quote(ItemUiContext.Instance.Session.RagFair, analysis.Source()));
+			return string.Join("\n", lines);
+		}
+
 		private static async Task Run(InventoryController controller, Weapon weapon, WeaponBuild build)
 		{
 			var reason = Unavailable(controller, weapon, 1);
-			var buildWeapon = build.Item as Weapon;
-			if (reason != null || buildWeapon == null)
+			var analysis = reason == null ? Analyze(controller, weapon, build) : null;
+			if (analysis == null)
 			{
 				Notify("Build: " + (reason ?? "that build has no weapon in it."));
 				return;
@@ -190,52 +305,22 @@ namespace CustomRpTweaks.Client
 			var inventory = controller.Inventory;
 			var ragfair = ItemUiContext.Instance.Session.RagFair;
 			var name = NameOf(build);
-			var needed = Count(ModsOf(buildWeapon));
-			var samples = ModsOf(buildWeapon).GroupBy(mod => mod.TemplateId).ToDictionary(group => group.Key, group => group.First());
+			var buildWeapon = analysis.BuildWeapon;
+			var needed = analysis.Needed;
+			var lacking = analysis.Lacking;
+			var borrowed = analysis.Borrowed;
+			var stash = inventory.Stash.GetAllItemsFromCollection().ToList();
 
-			if (WeaponAssembler.CheckIfAlreadyBuilt(WeaponAssembler.GetInstalledMods(weapon), buildWeapon))
+			if (analysis.Built)
 			{
 				Notify($"Build: the weapon already is \"{name}\".");
 				return;
 			}
 
-			var stash = inventory.Stash.GetAllItemsFromCollection().ToList();
-			var lacking = Lacking(needed, Available(weapon, stash));
-
-			// Parts of other weapons that can go on this one (a setting): taken off after the purchase worked out
-			var borrowed = new List<Mod>();
-			if (Plugin.BuildBorrow.Value && lacking.Count > 0)
-			{
-				var donors = Donors(weapon, stash);
-				foreach (var template in lacking.Keys.ToList())
-				{
-					foreach (var donor in donors.Where(mod => mod.TemplateId == template).Take(lacking[template]))
-					{
-						borrowed.Add(donor);
-						lacking[template]--;
-					}
-
-					if (lacking[template] <= 0)
-					{
-						lacking.Remove(template);
-					}
-				}
-			}
-
 			// What is still missing is bought: nothing is bought unless all of it can be had and paid for
 			if (lacking.Count > 0)
 			{
-				var source = new FleaBarterBuy.Source
-				{
-					Requirements = lacking.Select(pair => (IExchangeRequirement)new PartRequirement(samples[pair.Key], pair.Value)).ToArray(),
-					Required = requirement => requirement.IntCount,
-					Suitable = (item, requirement) => false,
-					Stash = () => new List<Item>(),
-					UnbuyableBlocks = true,
-					Setting = QuickBuyMode.BuyAll
-				};
-
-				if (!await FleaBarterBuy.Run(ragfair, source))
+				if (!await FleaBarterBuy.Run(ragfair, analysis.Source()))
 				{
 					return;
 				}
@@ -317,11 +402,45 @@ namespace CustomRpTweaks.Client
 	{
 		private readonly Weapon _weapon;
 		private readonly List<WeaponBuild> _builds;
+		private readonly List<string> _marks = new List<string>();
+
+		// The submenu being shown (the tooltips are attached to its buttons after the game has made them)
+		internal static BuildActions Current;
+
+		internal int Count => _builds.Count;
 
 		internal BuildActions(ItemUiContext uiContext, Weapon weapon) : base(uiContext)
 		{
 			_weapon = weapon;
 			_builds = WeaponBuildBuy.PresetsFor(weapon);
+			var controller = Dismantle.ControllerOf(uiContext);
+			foreach (var build in _builds)
+			{
+				try
+				{
+					_marks.Add(controller == null ? string.Empty : WeaponBuildBuy.Indicator(WeaponBuildBuy.Analyze(controller, weapon, build)));
+				}
+				catch (Exception e)
+				{
+					_marks.Add(string.Empty);
+					Plugin.Log.LogWarning($"Build menu: couldn't look at a build: {e.Message}");
+				}
+			}
+
+			Current = this;
+		}
+
+		// Used by the hover tooltip of the entry
+		internal string CacheKey(int index)
+		{
+			var controller = Dismantle.ControllerOf(UIContext);
+			return $"build|{_weapon.Id}|{_builds[index].Id}|{(controller == null ? 0 : controller.Inventory.Stash.GetAllItemsFromCollection().Count())}";
+		}
+
+		internal Task<string> Quote(int index)
+		{
+			var controller = Dismantle.ControllerOf(UIContext);
+			return controller == null ? Task.FromResult("") : WeaponBuildBuy.Quote(controller, _weapon, _builds[index]);
 		}
 
 		public override Dictionary<EBuildPreset, string> CustomNames
@@ -331,7 +450,7 @@ namespace CustomRpTweaks.Client
 				var names = new Dictionary<EBuildPreset, string>();
 				for (var i = 0; i < _builds.Count; i++)
 				{
-					names[(EBuildPreset)i] = string.IsNullOrEmpty(_builds[i].HandbookName) ? "Build " + (i + 1) : _builds[i].HandbookName;
+					names[(EBuildPreset)i] = (string.IsNullOrEmpty(_builds[i].HandbookName) ? "Build " + (i + 1) : _builds[i].HandbookName) + (i < _marks.Count ? _marks[i] : "");
 				}
 
 				return names;
