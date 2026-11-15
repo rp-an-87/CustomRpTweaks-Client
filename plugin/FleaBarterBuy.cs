@@ -293,6 +293,16 @@ namespace CustomRpTweaks.Client
 					Notify($"Quick buy: the flea market refused the purchase (code {result.ErrorCode}), the offers have probably changed. Try again.");
 					return;
 				}
+
+				// The game's own sound of a completed trade
+				try
+				{
+					Singleton<GUISounds>.Instance.PlayUISound(EUISoundType.TradeOperationComplete);
+				}
+				catch (Exception e)
+				{
+					Plugin.Verbose($"Quick buy: no purchase sound ({e.Message})");
+				}
 			}
 
 			if (plan.Bought > 0 && src.Refresh != null)
@@ -305,7 +315,7 @@ namespace CustomRpTweaks.Client
 			}
 
 			var spare = plan.Needs.Sum(need => need.Spare);
-			var summary = plan.Bought == 0 ? "nothing needed buying" : $"bought {plan.Bought} item{(plan.Bought == 1 ? "" : "s")} for {plan.TotalText}" + (spare > 0 ? $" ({spare} spare in a pack)" : "");
+			var summary = plan.Bought == 0 ? "nothing needed buying" : $"bought {string.Join(", ", plan.Needs.Where(need => need.Bought > 0).Select(need => $"{need.Bought} {need.Name}"))} for {plan.TotalText}" + (spare > 0 ? $" ({spare} spare in a pack)" : "");
 
 			// A craft: the items are in the stash, starting it is up to you
 			if (offer == null || !Plugin.FleaBarterBuyComplete.Value)
