@@ -122,6 +122,7 @@ namespace CustomRpTweaks.Client
 			ServerTime.Update();
 			RangefinderZero.Update();
 			AmmoZero.Update();
+			WeaponBuildBuy.Update();
 			BipodVisual.Update();
 		}
 

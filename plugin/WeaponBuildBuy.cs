@@ -8,6 +8,7 @@ using EFT.Communications;
 using EFT.InventoryLogic;
 using EFT.UI;
 using EFT.UI.Builds;
+using EFT.UI.DragAndDrop;
 using UnityEngine;
 
 namespace CustomRpTweaks.Client
@@ -50,6 +51,11 @@ namespace CustomRpTweaks.Client
 			if (InGameStatus.InRaid)
 			{
 				return "Not available in a raid.";
+			}
+
+			if (Busy.Contains(weapon))
+			{
+				return "This weapon is being built right now.";
 			}
 
 			if (!Singleton<BonusController>.Instance.HasBonus(EBonusType.UnlockWeaponModification))
@@ -175,7 +181,50 @@ namespace CustomRpTweaks.Client
 		private static string NameOf(WeaponBuild build) => string.IsNullOrEmpty(build.HandbookName) ? build.Item.ShortName.Localized(null) : build.HandbookName;
 
 		internal static void Start(InventoryController controller, Weapon weapon, WeaponBuild build) =>
-			FleaBarterBuy.RunGuarded(() => Run(controller, weapon, build));
+			FleaBarterBuy.RunGuarded(() => RunBusy(controller, weapon, build));
+
+		// The weapons being built right now: they blink in the stash like an item the server is working on, and can't be built again
+		private static readonly HashSet<Weapon> Busy = new HashSet<Weapon>();
+		private static float _nextBlink;
+
+		private static async Task RunBusy(InventoryController controller, Weapon weapon, WeaponBuild build)
+		{
+			try
+			{
+				await Run(controller, weapon, build);
+			}
+			finally
+			{
+				Busy.Remove(weapon);
+				SetBlinking(weapon, false);
+			}
+		}
+
+		// The weapon's views in the stash blink (the game's own "being worked on" state); views the stash redraws are picked up again
+		private static void SetBlinking(Weapon weapon, bool on)
+		{
+			foreach (var view in UnityEngine.Object.FindObjectsOfType<ItemView>())
+			{
+				if (view.Item == weapon && view.IsBeingLoadedAmmo.Value != on)
+				{
+					view.IsBeingLoadedAmmo.Value = on;
+				}
+			}
+		}
+
+		internal static void Update()
+		{
+			if (Busy.Count == 0 || Time.unscaledTime < _nextBlink)
+			{
+				return;
+			}
+
+			_nextBlink = Time.unscaledTime + 0.25f;
+			foreach (var weapon in Busy)
+			{
+				SetBlinking(weapon, true);
+			}
+		}
 
 		// What a build needs, what is there and what is still missing (and where it could come from)
 		internal class Analysis
@@ -324,6 +373,10 @@ namespace CustomRpTweaks.Client
 				Notify($"Build: the weapon already is \"{name}\".");
 				return;
 			}
+
+			Busy.Add(weapon);
+			SetBlinking(weapon, true);
+			Notify($"Build: building \"{name}\"...");
 
 			// What is still missing is bought: nothing is bought unless all of it can be had and paid for
 			if (lacking.Count > 0)
