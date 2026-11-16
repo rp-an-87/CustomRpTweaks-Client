@@ -48,6 +48,8 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<KeyboardShortcut> RangefinderZeroHotkey;
 		internal static ConfigEntry<RangefinderRounding> RangefinderZeroRounding;
 		internal static ConfigEntry<KeyboardShortcut> ZeroResetHotkey;
+		internal static ConfigEntry<bool> AmmoZeroEnabled;
+		internal static ConfigEntry<bool> FineZeroSteps;
 		internal static ConfigEntry<bool> BipodVisualFix;
 		internal static ConfigEntry<bool> BipodRelax;
 		internal static ConfigEntry<bool> BipodAnySurface;
@@ -118,6 +120,7 @@ namespace CustomRpTweaks.Client
 			SplitStack.Update();
 			ServerTime.Update();
 			RangefinderZero.Update();
+			AmmoZero.Update();
 			BipodVisual.Update();
 		}
 
@@ -242,6 +245,10 @@ namespace CustomRpTweaks.Client
 				"Which zero step the hotkey picks when the rangefinder's distance is between two. Down: the step at or below the distance (a 437 m reading with 50 m steps gives 400 m). Up: the step at or above it (450 m). Past the first or last step of the sight, that step is used.");
 			ZeroResetHotkey = Config.Bind("19. Aiming", "3b. Reset zero to minimum hotkey", new KeyboardShortcut(KeyCode.PageDown, KeyCode.LeftAlt),
 				"While aiming through a sight, press this to set its zero back to the sight's shortest zero step. It uses the game's own zeroing steps, so it only works while aiming. Unassign the key to turn it off.");
+			AmmoZeroEnabled = Config.Bind("19. Aiming", "3a. Zero follows the loaded ammo", true,
+				"The game builds every sight's zero from the weapon's default ammo, so a 200 m zero is only right for that round. With this on, the zero of the weapon in your hands is built from the round about to fire (the chambered one, otherwise the first in the magazine) and is rebuilt while you aim whenever that round changes. The zero numbers stay the same; the sight's angle is the one that round needs. Only your own weapon. Off: the game's own behaviour. Turn on verbose logging to see each rebuild and how long it took (lines starting with Ammo zero:).");
+			FineZeroSteps = Config.Bind("19. Aiming", "3a2. Finer zero steps at long range", true,
+				"Adds zero steps inside each sight's own range: every 50 m up to 300 m and every 25 m from 300 to 800 m (the sight's own steps stay). Helps the rangefinder zero hotkey pick closer. The zero a sight had saved may land on another distance the first time. Off: the sight's own steps.");
 			BipodVisualFix = Config.Bind("19. Aiming", "3c. Fix the bipod looking deployed when it is not", true,
 				"After a reload or a weapon switch the bipod can look deployed while the game's bipod state says it is not. This keeps the weapon's animation flag in line with the real state. Off: the game's own behaviour. Turn on verbose logging to see the state and flag (lines starting with Bipod:).");
 			BipodRelax = Config.Bind("19. Aiming", "4. Relax deploying a bipod while prone", true,
@@ -258,6 +265,10 @@ namespace CustomRpTweaks.Client
 				new ConfigDescription("1 is level ground; the game wants 0.94 (about 20 degrees), the server's setting is 0.82 (about 35). 0.7 is about 45 degrees. The lower of this and the server's setting is used.", new AcceptableValueRange<float>(0.3f, 1f)));
 			new RelaxedProneBipodPatch().Enable();
 			new RangefinderReadingPatch().Enable();
+			new AmmoZeroCalibrationPatch().Enable();
+			new AmmoZeroIronPatch().Enable();
+			new FineZeroStepsPatch().Enable();
+			new FineZeroDistancePatch().Enable();
 			new BipodDeployLogPatch().Enable();
 			new FuelRefillShowPatch().Enable();
 			new FuelRefillUpdatePatch().Enable();
