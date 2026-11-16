@@ -51,6 +51,7 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<bool> AmmoZeroEnabled;
 		internal static ConfigEntry<bool> FineZeroSteps;
 		internal static ConfigEntry<bool> LaserFollowsZero;
+		internal static ConfigEntry<bool> ZeroKeepsAim;
 		internal static ConfigEntry<bool> RangefinderFollowsZero;
 		internal static ConfigEntry<string> FineZeroStepList;
 		internal static ConfigEntry<bool> BipodVisualFix;
@@ -262,6 +263,8 @@ namespace CustomRpTweaks.Client
 				"EXPERIMENT. While you aim through a sight, the laser beam of the device on your weapon points along your sight line (at the point of the sight's zero) instead of along the barrel, so the dot lands where your reticle points. Off the sights, or on iron sights, nothing changes. The device itself does not move. Turn on verbose logging to see the turn (lines starting with Aim tilt:).");
 			RangefinderFollowsZero = Config.Bind("19. Aiming", "3a5. Rangefinder follows the zero while aiming", true,
 				"EXPERIMENT. The same for the rangefinder built into the device (RAPTAR): while you aim through a sight it measures along your sight line, so the reading is the distance to what your reticle is on, and the zero-from-rangefinder hotkey uses it. Off the sights nothing changes.");
+			ZeroKeepsAim = Config.Bind("19. Aiming", "3a6. Changing the zero keeps your aim on target", true,
+				"EXPERIMENT. When the zero of the sight you aim through changes by a step (the game's keys, the rangefinder hotkey or the reset hotkey), the game turns the sight relative to the gun, so the reticle jumps up or down. With this on, your aim is moved by the same angle the other way, so the reticle stays on what it was on. Turn on verbose logging to see the angle (lines starting with Zero keeps aim:).");
 			BipodVisualFix = Config.Bind("19. Aiming", "3c. Fix the bipod looking deployed when it is not", true,
 				"After a reload or a weapon switch the bipod can look deployed while the game's bipod state says it is not. This keeps the weapon's animation flag in line with the real state. Off: the game's own behaviour. Turn on verbose logging to see the state and flag (lines starting with Bipod:).");
 			BipodRelax = Config.Bind("19. Aiming", "4. Relax deploying a bipod while prone", true,
@@ -279,6 +282,7 @@ namespace CustomRpTweaks.Client
 			new RelaxedProneBipodPatch().Enable();
 			new RangefinderReadingPatch().Enable();
 			new LaserFollowsZeroPatch().Enable();
+			new ZeroKeepsAimPatch().Enable();
 			new RangefinderFollowsZeroPatch().Enable();
 			new AmmoZeroCalibrationPatch().Enable();
 			new AmmoZeroIronPatch().Enable();
