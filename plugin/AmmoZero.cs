@@ -77,8 +77,16 @@ namespace CustomRpTweaks.Client
 			Plugin.Verbose($"Ammo zero: rebuilt for {(ammo == null ? "default ammo" : ammo.NameLocalizationKey)} in {Timer.Elapsed.TotalMilliseconds:0.00} ms");
 		}
 
-		// Finer zero steps: every 50 m up to 300 m, every 25 m from 300 to 800 m, inside the sight's own range; the sight's own steps stay
-		private static readonly ConditionalWeakTable<int[], int[]> Cache = new ConditionalWeakTable<int[], int[]>();
+		// Finer zero steps: the steps in the setting that fall inside the sight's own range are added; the sight's own steps stay
+		private static ConditionalWeakTable<int[], int[]> _cache = new ConditionalWeakTable<int[], int[]>();
+		private static int[] _extra = new int[0];
+
+		internal static void ReloadSteps()
+		{
+			_extra = (Plugin.FineZeroStepList.Value ?? string.Empty).Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)
+				.Select(text => int.TryParse(text, out var value) ? value : 0).Where(value => value > 0).Distinct().ToArray();
+			_cache = new ConditionalWeakTable<int[], int[]>();
+		}
 
 		internal static int[] FineSteps(int[] original)
 		{
@@ -87,7 +95,7 @@ namespace CustomRpTweaks.Client
 				return original;
 			}
 
-			if (Cache.TryGetValue(original, out var cached))
+			if (_cache.TryGetValue(original, out var cached))
 			{
 				return cached;
 			}
@@ -102,29 +110,41 @@ namespace CustomRpTweaks.Client
 			if (ascending)
 			{
 				var set = new SortedSet<int>(original);
-				for (var d = original[0]; d <= original[original.Length - 1] && d <= 800; d++)
+				foreach (var step in _extra)
 				{
-					if (d > 0 && (d <= 300 ? d % 50 == 0 : d % 25 == 0))
+					if (step >= original[0] && step <= original[original.Length - 1])
 					{
-						set.Add(d);
+						set.Add(step);
 					}
 				}
 
 				result = set.ToArray();
 			}
 
-			Cache.Add(original, result);
+			_cache.Add(original, result);
 			return result;
 		}
 	}
 
-	// The two places that build the zero use the weapon's default ammo; they get the round about to fire instead
+	// The scope and red dot zero is built from the weapon's default ammo; it gets the round about to fire instead (your own weapon only)
 	internal class AmmoZeroCalibrationPatch : ModulePatch
 	{
-		protected override MethodBase GetTargetMethod() => typeof(Weapon).GetMethod(nameof(Weapon.RecalculateScopeCalibrationPoints), BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly);
+		protected override MethodBase GetTargetMethod() => typeof(Weapon).GetMethod(nameof(Weapon.CreateOpticCalibrationData), BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly);
 
-		[PatchTranspiler]
-		private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) => AmmoZeroIl.UseAmmoFor(instructions);
+		[PatchPrefix]
+		private static void Prefix(Weapon __instance, ref AmmoTemplate ammoTemplate)
+		{
+			if (!Plugin.AmmoZeroEnabled.Value || __instance != AmmoZero.MyWeapon())
+			{
+				return;
+			}
+
+			var current = __instance.CurrentAmmoTemplate;
+			if (current != null)
+			{
+				ammoTemplate = current;
+			}
+		}
 	}
 
 	internal class AmmoZeroIronPatch : ModulePatch

@@ -50,6 +50,7 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<KeyboardShortcut> ZeroResetHotkey;
 		internal static ConfigEntry<bool> AmmoZeroEnabled;
 		internal static ConfigEntry<bool> FineZeroSteps;
+		internal static ConfigEntry<string> FineZeroStepList;
 		internal static ConfigEntry<bool> BipodVisualFix;
 		internal static ConfigEntry<bool> BipodRelax;
 		internal static ConfigEntry<bool> BipodAnySurface;
@@ -248,7 +249,12 @@ namespace CustomRpTweaks.Client
 			AmmoZeroEnabled = Config.Bind("19. Aiming", "3a. Zero follows the loaded ammo", true,
 				"The game builds every sight's zero from the weapon's default ammo, so a 200 m zero is only right for that round. With this on, the zero of the weapon in your hands is built from the round about to fire (the chambered one, otherwise the first in the magazine) and is rebuilt while you aim whenever that round changes. The zero numbers stay the same; the sight's angle is the one that round needs. Only your own weapon. Off: the game's own behaviour. Turn on verbose logging to see each rebuild and how long it took (lines starting with Ammo zero:).");
 			FineZeroSteps = Config.Bind("19. Aiming", "3a2. Finer zero steps at long range", true,
-				"Adds zero steps inside each sight's own range: every 50 m up to 300 m and every 25 m from 300 to 800 m (the sight's own steps stay). Helps the rangefinder zero hotkey pick closer. The zero a sight had saved may land on another distance the first time. Off: the sight's own steps.");
+				"Adds the zero steps of the next setting to every sight, but only those inside the sight's own range (its own steps stay). Helps the rangefinder zero hotkey pick closer. The zero a sight had saved may land on another distance the first time. Off: the sight's own steps.");
+			FineZeroStepList = Config.Bind("19. Aiming", "3a3. Finer zero steps: the steps (m)", "50,100,150,200,250,300,333,366,400,425,450,475,500,525,550,575,600,620,640,660,680,700",
+				"Comma-separated distances in metres (the list of the Extended Zero Ranges mod). Applied to each sight within its own shortest and longest step.");
+			AmmoZero.ReloadSteps();
+			FineZeroStepList.SettingChanged += (sender, args) => AmmoZero.ReloadSteps();
+			FineZeroSteps.SettingChanged += (sender, args) => AmmoZero.ReloadSteps();
 			BipodVisualFix = Config.Bind("19. Aiming", "3c. Fix the bipod looking deployed when it is not", true,
 				"After a reload or a weapon switch the bipod can look deployed while the game's bipod state says it is not. This keeps the weapon's animation flag in line with the real state. Off: the game's own behaviour. Turn on verbose logging to see the state and flag (lines starting with Bipod:).");
 			BipodRelax = Config.Bind("19. Aiming", "4. Relax deploying a bipod while prone", true,
