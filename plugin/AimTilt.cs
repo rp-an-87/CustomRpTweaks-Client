@@ -11,7 +11,7 @@ using UnityEngine;
 namespace CustomRpTweaks.Client
 {
 	// While you aim through a sight, the laser beam and the rangefinder's measuring ray of the device on your weapon point along your sight line
-	// (at the point of the sight's zero), not along the barrel. The turn is applied only for the moment the beam is drawn or the ray is cast
+	// (at the sight line), not along the barrel. The turn is applied only for the moment the beam is drawn or the ray is cast
 	// and is undone straight after, so the device model never moves. Off the sights nothing changes.
 	internal static class AimTilt
 	{
@@ -43,8 +43,11 @@ namespace CustomRpTweaks.Client
 				return none;
 			}
 
+			// Parallel to the sight line (from the scope through the point of the zero), not aimed at that point: a beam aimed at the point
+			// crosses the sight line there and drifts away from it beyond, badly so on a short zero
 			var point = animation.GetWorldCalibrationPoint(sight.GetCurrentOpticCalibrationPoint());
-			var toPoint = point - target.position;
+			var scope = animation.CurrentScope;
+			var toPoint = point - (scope != null && scope.Bone != null ? scope.Bone.position : target.position);
 			if (toPoint.sqrMagnitude < 1f)
 			{
 				return none;

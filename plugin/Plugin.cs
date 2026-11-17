@@ -260,7 +260,7 @@ namespace CustomRpTweaks.Client
 			FineZeroStepList.SettingChanged += (sender, args) => AmmoZero.ReloadSteps();
 			FineZeroSteps.SettingChanged += (sender, args) => AmmoZero.ReloadSteps();
 			LaserFollowsZero = Config.Bind("19. Aiming", "3a4. Laser follows the zero while aiming", true,
-				"EXPERIMENT. While you aim through a sight, the laser beam of the device on your weapon points along your sight line (at the point of the sight's zero) instead of along the barrel, so the dot lands where your reticle points. Off the sights, or on iron sights, nothing changes. The device itself does not move. Turn on verbose logging to see the turn (lines starting with Aim tilt:).");
+				"EXPERIMENT. While you aim through a sight, the laser beam of the device on your weapon points parallel to your sight line instead of along the barrel, so the dot lands where your reticle points. Off the sights, or on iron sights, nothing changes. The device itself does not move. Turn on verbose logging to see the turn (lines starting with Aim tilt:).");
 			RangefinderFollowsZero = Config.Bind("19. Aiming", "3a5. Rangefinder follows the zero while aiming", true,
 				"EXPERIMENT. The same for the rangefinder built into the device (RAPTAR): while you aim through a sight it measures along your sight line, so the reading is the distance to what your reticle is on, and the zero-from-rangefinder hotkey uses it. Off the sights nothing changes.");
 			ZeroKeepsAim = Config.Bind("19. Aiming", "3a6. Changing the zero keeps your aim on target", true,
