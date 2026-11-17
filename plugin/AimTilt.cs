@@ -64,6 +64,7 @@ namespace CustomRpTweaks.Client
 			var turned = Vector3.Angle(state.Rotation * Vector3.forward, target.forward);
 			var scopeAngle = axis.HasValue ? Vector3.Angle(axis.Value, toPoint) : -1f;
 			Diagnose(part, what, null, turned, scopeAngle, sight.GetCurrentOpticCalibrationDistance());
+			TraceFlip(part, what, turned, state.Rotation * Vector3.forward, direction, toPoint.normalized, target.position, scope != null && scope.Bone != null ? scope.Bone.position : target.position);
 			if (Time.unscaledTime >= _nextLog)
 			{
 				_nextLog = Time.unscaledTime + 2f;
@@ -131,6 +132,33 @@ namespace CustomRpTweaks.Client
 			stat.Applied = stat.Skipped = 0;
 			stat.Min = float.MaxValue;
 			stat.Max = 0f;
+		}
+
+		// Verbose only: when the turn jumps from one frame to the next, the numbers of that frame and the one before are logged (at most 30 times)
+		private static readonly Dictionary<int, float> LastTurn = new Dictionary<int, float>();
+		private static string _lastTrace = string.Empty;
+		private static int _traces;
+
+		private static void TraceFlip(Component part, string what, float turned, Vector3 laserForward, Vector3 axis, Vector3 line, Vector3 laserPosition, Vector3 scopePosition)
+		{
+			if (!Plugin.VerboseOn)
+			{
+				return;
+			}
+
+			var id = part.GetInstanceID();
+			var pitch = Mathf.Asin(Mathf.Clamp(laserForward.y, -1f, 1f)) * Mathf.Rad2Deg;
+			var axisPitch = Mathf.Asin(Mathf.Clamp(axis.y, -1f, 1f)) * Mathf.Rad2Deg;
+			var linePitch = Mathf.Asin(Mathf.Clamp(line.y, -1f, 1f)) * Mathf.Rad2Deg;
+			var now = $"frame {Time.frameCount}: turn {turned:0.0000}, laser pitch {pitch:0.0000}, axis pitch {axisPitch:0.0000}, line pitch {linePitch:0.0000}, laser y {laserPosition.y:0.0000}, scope y {scopePosition.y:0.0000}, laser-scope {Vector3.Distance(laserPosition, scopePosition):0.0000}";
+			if (LastTurn.TryGetValue(id, out var before) && Mathf.Abs(turned - before) > 0.04f && _traces < 30)
+			{
+				_traces++;
+				Plugin.Verbose($"Aim tilt flip ({what} {id}): before [{_lastTrace}] now [{now}]");
+			}
+
+			LastTurn[id] = turned;
+			_lastTrace = now;
 		}
 
 		// Where the sight you aim through really looks: the optic's lens (or the red dot's), after the game turned it for the zero
