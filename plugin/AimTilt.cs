@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using EFT;
+using EFT.Animations;
 using EFT.InventoryLogic;
 using HarmonyLib;
 using SPT.Reflection.Patching;
@@ -54,10 +55,14 @@ namespace CustomRpTweaks.Client
 				return none;
 			}
 
+			// The sight's own axis, the one the game itself turns toward the zero point and the reticle follows, is what the beam runs
+			// parallel to; my own line to the zero point is only the fallback (and what the stats compare it with)
+			var axis = SightAxis(scope);
+			var direction = axis ?? toPoint.normalized;
 			var state = new State { Applied = true, Target = target, Rotation = target.rotation };
-			target.rotation = Quaternion.FromToRotation(target.forward, toPoint.normalized) * target.rotation;
+			target.rotation = Quaternion.FromToRotation(target.forward, direction) * target.rotation;
 			var turned = Vector3.Angle(state.Rotation * Vector3.forward, target.forward);
-			var scopeAngle = scope != null && scope.Bone != null ? Vector3.Angle(scope.Bone.forward, toPoint) : -1f;
+			var scopeAngle = axis.HasValue ? Vector3.Angle(axis.Value, toPoint) : -1f;
 			Diagnose(what, true, turned, scopeAngle, sight.GetCurrentOpticCalibrationDistance());
 			if (Time.unscaledTime >= _nextLog)
 			{
@@ -104,12 +109,36 @@ namespace CustomRpTweaks.Client
 			_diagNext = Time.unscaledTime + 1f;
 			if (_diagApplied > 0)
 			{
-				Plugin.Verbose($"Aim tilt stats ({_diagWhat}): zero {_diagDistance} m, applied {_diagApplied}x, skipped {_diagSkipped}x, turn {_diagMin:0.0000} to {_diagMax:0.0000} degrees, scope forward off the sight line by {_diagScope:0.0000} degrees");
+				Plugin.Verbose($"Aim tilt stats ({_diagWhat}): zero {_diagDistance} m, applied {_diagApplied}x, skipped {_diagSkipped}x, turn {_diagMin:0.0000} to {_diagMax:0.0000} degrees, sight axis off my computed line by {_diagScope:0.0000} degrees");
 			}
 
 			_diagApplied = _diagSkipped = 0;
 			_diagMin = float.MaxValue;
 			_diagMax = 0f;
+		}
+
+		// Where the sight you aim through really looks: the optic's lens (or the red dot's), after the game turned it for the zero
+		private static Vector3? SightAxis(ProceduralWeaponAnimation.SightNBone scope)
+		{
+			var cache = scope == null ? null : scope.ScopePrefabCache;
+			if (cache == null)
+			{
+				return null;
+			}
+
+			Transform lens = null;
+			if (scope.IsOptic)
+			{
+				var optic = cache.FirstOptic;
+				lens = optic != null && optic.ScopeData != null ? optic.ScopeData.transform : null;
+			}
+			else
+			{
+				var collimator = cache.FirstCollimator;
+				lens = collimator != null ? collimator.transform : null;
+			}
+
+			return lens == null ? (Vector3?)null : lens.forward.normalized;
 		}
 
 		internal static void Restore(State state)
