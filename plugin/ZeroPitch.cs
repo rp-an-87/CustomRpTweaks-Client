@@ -43,7 +43,6 @@ namespace CustomRpTweaks.Client
 			var sight = animation == null || !animation.IsAiming || animation.IsGrenadeLauncher ? null : animation.CurrentAimingMod;
 			if (sight == null || !sight.HasOpticCalibrationPoints(sight.SelectedScopeIndex) || !OnYourWeapon(part))
 			{
-				Diagnose(part, what, sight == null ? "no sight with zero points (or not aiming, or grenade mode)" : "not on your weapon", 0f, 0f, 0);
 				return none;
 			}
 
@@ -65,7 +64,6 @@ namespace CustomRpTweaks.Client
 			var points = sight.OpticCalibrationPoints != null && scopeIndex < sight.OpticCalibrationPoints.Length ? sight.OpticCalibrationPoints[scopeIndex] : null;
 			if (steps == null || points == null || steps.Length == 0 || steps.Length != points.Length)
 			{
-				Diagnose(part, what, "the sight's zero steps and points do not match", 0f, 0f, 0);
 				return none;
 			}
 
@@ -84,7 +82,6 @@ namespace CustomRpTweaks.Client
 				return none;
 			}
 
-			var axis = SightAxis(scope);
 			// Only the weapon's vertical (pitch) change between the two sight lines is applied, about the weapon's own right axis; the beam's
 			// sideways direction, and so the sideways offset of the mount, is never touched
 			var origin = animation.GetWorldCalibrationPoint(Vector3.zero);
@@ -92,11 +89,7 @@ namespace CustomRpTweaks.Client
 			var turn = VerticalTurn(fromShortest.normalized, toPoint.normalized, right);
 			var state = new State { Applied = true, Target = target, Rotation = target.rotation };
 			target.rotation = turn * target.rotation;
-			var direction = target.forward;
 			var turned = AngleBetween(state.Rotation * Vector3.forward, target.forward);
-			var scopeAngle = axis.HasValue ? Vector3.Angle(axis.Value, toPoint) : -1f;
-			Diagnose(part, what, null, turned, scopeAngle, sight.GetCurrentOpticCalibrationDistance(), Plugin.VerboseOn ? PointInfo(sight) : null);
-			TraceFlip(part, what, turned, state.Rotation * Vector3.forward, direction, toPoint.normalized, target.position, scope != null && scope.Bone != null ? scope.Bone.position : target.position);
 			if (Time.unscaledTime >= _nextLog)
 			{
 				_nextLog = Time.unscaledTime + 2f;
@@ -106,141 +99,8 @@ namespace CustomRpTweaks.Client
 			return state;
 		}
 
-		// Verbose only: once a second and per device part, how often the tilt was applied or skipped (and why), its smallest and largest
-		// turn, and how far the sight axis is from the computed line (to see which call flips between frames)
-		private class Stat
-		{
-			internal int Applied, Skipped, Distance;
-			internal float Min = float.MaxValue, Max, Off;
-			internal string Reason = string.Empty, Point = string.Empty;
-			internal float Next;
-		}
-
-		private static readonly Dictionary<int, Stat> Stats = new Dictionary<int, Stat>();
-
-		private static void Diagnose(Component part, string what, string skipReason, float turned, float off, int distance, string point = null)
-		{
-			if (!Plugin.VerboseOn || part == null)
-			{
-				return;
-			}
-
-			var id = part.GetInstanceID();
-			if (!Stats.TryGetValue(id, out var stat))
-			{
-				stat = new Stat();
-				Stats[id] = stat;
-			}
-
-			if (skipReason == null)
-			{
-				stat.Applied++;
-				stat.Min = Mathf.Min(stat.Min, turned);
-				stat.Max = Mathf.Max(stat.Max, turned);
-				stat.Off = off;
-				stat.Distance = distance;
-				stat.Point = point ?? string.Empty;
-			}
-			else
-			{
-				stat.Skipped++;
-				stat.Reason = skipReason;
-			}
-
-			if (Time.unscaledTime < stat.Next)
-			{
-				return;
-			}
-
-			stat.Next = Time.unscaledTime + 1f;
-			if (stat.Applied > 0)
-			{
-				Plugin.Verbose($"Zero pitch stats ({what} {id} on {part.transform.parent?.name}): zero {stat.Distance} m, applied {stat.Applied}x, skipped {stat.Skipped}x, turn {stat.Min:0.0000} to {stat.Max:0.0000} degrees, sight axis off my computed line by {stat.Off:0.0000} degrees, {stat.Point}");
-			}
-			else if (stat.Skipped > 0)
-			{
-				Plugin.Verbose($"Zero pitch stats ({what} {id} on {part.transform.parent?.name}): only skipped, {stat.Skipped}x, because {stat.Reason}");
-			}
-
-			stat.Applied = stat.Skipped = 0;
-			stat.Min = float.MaxValue;
-			stat.Max = 0f;
-		}
-
-		private static string PointInfo(SightComponent sight)
-		{
-			var scope = sight.SelectedScopeIndex;
-			var steps = sight.GetScopeCalibrationDistances(scope);
-			var point = sight.GetCurrentOpticCalibrationPoint();
-			return $"point ({point.x:0.0000}, {point.y:0.0000}, {point.z:0.0000}) index {sight.GetCurrentOpticCalibrationPointIndex(scope)} of {(steps == null ? 0 : steps.Length)} [{(steps == null ? string.Empty : string.Join(",", steps))}]";
-		}
-
-		// Verbose only: when the turn jumps from one frame to the next, the numbers of that frame and the one before are logged (at most 30 times)
-		private static readonly Dictionary<int, float> LastTurn = new Dictionary<int, float>();
-		private static string _lastTrace = string.Empty;
-		private static int _traces;
-
-		private static void TraceFlip(Component part, string what, float turned, Vector3 laserForward, Vector3 axis, Vector3 line, Vector3 laserPosition, Vector3 scopePosition)
-		{
-			if (!Plugin.VerboseOn)
-			{
-				return;
-			}
-
-			var id = part.GetInstanceID();
-			var pitch = Mathf.Asin(Mathf.Clamp(laserForward.y, -1f, 1f)) * Mathf.Rad2Deg;
-			var axisPitch = Mathf.Asin(Mathf.Clamp(axis.y, -1f, 1f)) * Mathf.Rad2Deg;
-			var linePitch = Mathf.Asin(Mathf.Clamp(line.y, -1f, 1f)) * Mathf.Rad2Deg;
-			var now = $"frame {Time.frameCount}: turn {turned:0.0000}, laser pitch {pitch:0.0000}, axis pitch {axisPitch:0.0000}, line pitch {linePitch:0.0000}, laser y {laserPosition.y:0.0000}, scope y {scopePosition.y:0.0000}, laser-scope {Vector3.Distance(laserPosition, scopePosition):0.0000}";
-			if (LastTurn.TryGetValue(id, out var before) && Mathf.Abs(turned - before) > 0.04f && _traces < 30)
-			{
-				_traces++;
-				Plugin.Verbose($"Zero pitch flip ({what} {id}): before [{_lastTrace}] now [{now}]");
-			}
-
-			LastTurn[id] = turned;
-			_lastTrace = now;
-		}
-
-		// Where the sight you aim through really looks: the optic's lens (or the red dot's), after the game turned it for the zero
-		private static Vector3? SightAxis(ProceduralWeaponAnimation.SightNBone scope)
-		{
-			var cache = scope == null ? null : scope.ScopePrefabCache;
-			if (cache == null)
-			{
-				return null;
-			}
-
-			Transform lens = null;
-			if (scope.IsOptic)
-			{
-				var optic = cache.FirstOptic;
-				lens = optic != null && optic.ScopeData != null ? optic.ScopeData.transform : null;
-			}
-			else
-			{
-				var collimator = cache.FirstCollimator;
-				lens = collimator != null ? collimator.transform : null;
-			}
-
-			return lens == null ? (Vector3?)null : lens.forward.normalized;
-		}
-
-		// Unity's FromToRotation returns "no turn" for angles under about 0.08 degrees, and Vector3.Angle is coarse there too; the tilt is
-		// that small on a short zero, so the turn is built from the cross product, which stays exact for small angles
-		private static Quaternion Between(Vector3 from, Vector3 to)
-		{
-			var cross = Vector3.Cross(from, to);
-			var sine = cross.magnitude;
-			var cosine = Vector3.Dot(from, to);
-			if (sine < 1e-9f)
-			{
-				return Quaternion.identity;
-			}
-
-			return cosine <= 0f ? Quaternion.FromToRotation(from, to) : Quaternion.AngleAxis(Mathf.Atan2(sine, cosine) * Mathf.Rad2Deg, cross / sine);
-		}
-
+		// Unity's FromToRotation returns "no turn" for angles under about 0.08 degrees and Vector3.Angle is coarse there too, and the correction
+		// is that small on a short zero, so the turn is built from atan2 of the cross product, which stays exact for small angles
 		// The turn about the axis "right" that takes the pitch of the first direction to the pitch of the second (both are flattened onto the plane
 		// across that axis first); exact for tiny angles
 		private static Quaternion VerticalTurn(Vector3 from, Vector3 to, Vector3 right)

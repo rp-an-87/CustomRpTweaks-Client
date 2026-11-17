@@ -25,8 +25,6 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<bool> LogSprintStops;
 
 		// Routine progress messages (what a hotkey did, which optional mods were found); warnings and errors always go to the log
-		internal static bool VerboseOn => VerboseLogging != null && VerboseLogging.Value;
-
 		internal static void Verbose(string message)
 		{
 			if (VerboseLogging != null && VerboseLogging.Value)
