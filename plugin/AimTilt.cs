@@ -37,9 +37,10 @@ namespace CustomRpTweaks.Client
 
 			var player = GamePlayerOwner.MyPlayer;
 			var animation = player == null ? null : player.ProceduralWeaponAnimation;
-			var sight = animation == null || !animation.IsAiming ? null : animation.CurrentAimingMod;
+			var sight = animation == null || !animation.IsAiming || animation.IsGrenadeLauncher ? null : animation.CurrentAimingMod;
 			if (sight == null || !sight.HasOpticCalibrationPoints(sight.SelectedScopeIndex) || !OnYourWeapon(part))
 			{
+				Diagnose(what, false, 0f, 0f, 0);
 				return none;
 			}
 
@@ -55,13 +56,60 @@ namespace CustomRpTweaks.Client
 
 			var state = new State { Applied = true, Target = target, Rotation = target.rotation };
 			target.rotation = Quaternion.FromToRotation(target.forward, toPoint.normalized) * target.rotation;
+			var turned = Vector3.Angle(state.Rotation * Vector3.forward, target.forward);
+			var scopeAngle = scope != null && scope.Bone != null ? Vector3.Angle(scope.Bone.forward, toPoint) : -1f;
+			Diagnose(what, true, turned, scopeAngle, sight.GetCurrentOpticCalibrationDistance());
 			if (Time.unscaledTime >= _nextLog)
 			{
 				_nextLog = Time.unscaledTime + 2f;
-				Plugin.Verbose($"Aim tilt: {what} turned {Vector3.Angle(state.Rotation * Vector3.forward, target.forward):0.000} degrees toward the zero point ({sight.GetCurrentOpticCalibrationDistance()} m)");
+				Plugin.Verbose($"Aim tilt: {what} turned {turned:0.000} degrees toward the zero point ({sight.GetCurrentOpticCalibrationDistance()} m)");
 			}
 
 			return state;
+		}
+
+		// Verbose only: once a second, how often the tilt was applied or not, its smallest and largest turn, and how far the scope's own
+		// forward is from the sight line (to see what flips between frames)
+		private static float _diagNext;
+		private static int _diagApplied, _diagSkipped, _diagDistance;
+		private static float _diagMin = float.MaxValue, _diagMax, _diagScope;
+		private static string _diagWhat = string.Empty;
+
+		private static void Diagnose(string what, bool applied, float turned, float scopeAngle, int distance)
+		{
+			if (!Plugin.VerboseOn)
+			{
+				return;
+			}
+
+			if (applied)
+			{
+				_diagApplied++;
+				_diagMin = Mathf.Min(_diagMin, turned);
+				_diagMax = Mathf.Max(_diagMax, turned);
+				_diagScope = scopeAngle;
+				_diagDistance = distance;
+			}
+			else
+			{
+				_diagSkipped++;
+			}
+
+			_diagWhat = what;
+			if (Time.unscaledTime < _diagNext)
+			{
+				return;
+			}
+
+			_diagNext = Time.unscaledTime + 1f;
+			if (_diagApplied > 0)
+			{
+				Plugin.Verbose($"Aim tilt stats ({_diagWhat}): zero {_diagDistance} m, applied {_diagApplied}x, skipped {_diagSkipped}x, turn {_diagMin:0.0000} to {_diagMax:0.0000} degrees, scope forward off the sight line by {_diagScope:0.0000} degrees");
+			}
+
+			_diagApplied = _diagSkipped = 0;
+			_diagMin = float.MaxValue;
+			_diagMax = 0f;
 		}
 
 		internal static void Restore(State state)

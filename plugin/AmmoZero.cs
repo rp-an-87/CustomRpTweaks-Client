@@ -29,10 +29,17 @@ namespace CustomRpTweaks.Client
 			return player == null ? null : (player.HandsController as Player.FirearmController)?.Item;
 		}
 
+		// The underbarrel grenade launcher is in use: the zero tweaks leave it to the game
+		internal static bool InGrenadeMode()
+		{
+			var player = GamePlayerOwner.MyPlayer;
+			return player != null && player.ProceduralWeaponAnimation != null && player.ProceduralWeaponAnimation.IsGrenadeLauncher;
+		}
+
 		// The round the zero is built for: the round about to fire in your weapon, otherwise the game's own choice (the weapon's default)
 		internal static AmmoTemplate AmmoFor(WeaponTemplate template)
 		{
-			if (Plugin.AmmoZeroEnabled.Value)
+			if (Plugin.AmmoZeroEnabled.Value && !InGrenadeMode())
 			{
 				var weapon = MyWeapon();
 				if (weapon != null && weapon.Template == template)
@@ -53,7 +60,7 @@ namespace CustomRpTweaks.Client
 		{
 			var player = GamePlayerOwner.MyPlayer;
 			var animation = player == null ? null : player.ProceduralWeaponAnimation;
-			var weapon = animation == null || !animation.IsAiming || !Plugin.AmmoZeroEnabled.Value ? null : MyWeapon();
+			var weapon = animation == null || !animation.IsAiming || animation.IsGrenadeLauncher || !Plugin.AmmoZeroEnabled.Value ? null : MyWeapon();
 			if (weapon == null)
 			{
 				_have = false;
@@ -134,7 +141,7 @@ namespace CustomRpTweaks.Client
 		[PatchPrefix]
 		private static void Prefix(Weapon __instance, ref AmmoTemplate ammoTemplate)
 		{
-			if (!Plugin.AmmoZeroEnabled.Value || __instance != AmmoZero.MyWeapon())
+			if (!Plugin.AmmoZeroEnabled.Value || AmmoZero.InGrenadeMode() || __instance != AmmoZero.MyWeapon())
 			{
 				return;
 			}

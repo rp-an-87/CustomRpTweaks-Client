@@ -34,7 +34,7 @@ namespace CustomRpTweaks.Client
 			try
 			{
 				var player = GamePlayerOwner.MyPlayer;
-				if (Plugin.ZeroKeepsAim.Value && player != null && __instance == player.ProceduralWeaponAnimation && __instance.IsAiming)
+				if (Plugin.ZeroKeepsAim.Value && player != null && __instance == player.ProceduralWeaponAnimation && __instance.IsAiming && !__instance.IsGrenadeLauncher)
 				{
 					__state = Elevation(__instance);
 				}
