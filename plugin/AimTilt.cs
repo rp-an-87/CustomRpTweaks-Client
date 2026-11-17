@@ -41,7 +41,7 @@ namespace CustomRpTweaks.Client
 			var sight = animation == null || !animation.IsAiming || animation.IsGrenadeLauncher ? null : animation.CurrentAimingMod;
 			if (sight == null || !sight.HasOpticCalibrationPoints(sight.SelectedScopeIndex) || !OnYourWeapon(part))
 			{
-				Diagnose(what, false, 0f, 0f, 0);
+				Diagnose(part, what, sight == null ? "no sight with zero points (or not aiming, or grenade mode)" : "not on your weapon", 0f, 0f, 0);
 				return none;
 			}
 
@@ -63,7 +63,7 @@ namespace CustomRpTweaks.Client
 			target.rotation = Quaternion.FromToRotation(target.forward, direction) * target.rotation;
 			var turned = Vector3.Angle(state.Rotation * Vector3.forward, target.forward);
 			var scopeAngle = axis.HasValue ? Vector3.Angle(axis.Value, toPoint) : -1f;
-			Diagnose(what, true, turned, scopeAngle, sight.GetCurrentOpticCalibrationDistance());
+			Diagnose(part, what, null, turned, scopeAngle, sight.GetCurrentOpticCalibrationDistance());
 			if (Time.unscaledTime >= _nextLog)
 			{
 				_nextLog = Time.unscaledTime + 2f;
@@ -73,48 +73,64 @@ namespace CustomRpTweaks.Client
 			return state;
 		}
 
-		// Verbose only: once a second, how often the tilt was applied or not, its smallest and largest turn, and how far the scope's own
-		// forward is from the sight line (to see what flips between frames)
-		private static float _diagNext;
-		private static int _diagApplied, _diagSkipped, _diagDistance;
-		private static float _diagMin = float.MaxValue, _diagMax, _diagScope;
-		private static string _diagWhat = string.Empty;
-
-		private static void Diagnose(string what, bool applied, float turned, float scopeAngle, int distance)
+		// Verbose only: once a second and per device part, how often the tilt was applied or skipped (and why), its smallest and largest
+		// turn, and how far the sight axis is from the computed line (to see which call flips between frames)
+		private class Stat
 		{
-			if (!Plugin.VerboseOn)
+			internal int Applied, Skipped, Distance;
+			internal float Min = float.MaxValue, Max, Off;
+			internal string Reason = string.Empty;
+			internal float Next;
+		}
+
+		private static readonly Dictionary<int, Stat> Stats = new Dictionary<int, Stat>();
+
+		private static void Diagnose(Component part, string what, string skipReason, float turned, float off, int distance)
+		{
+			if (!Plugin.VerboseOn || part == null)
 			{
 				return;
 			}
 
-			if (applied)
+			var id = part.GetInstanceID();
+			if (!Stats.TryGetValue(id, out var stat))
 			{
-				_diagApplied++;
-				_diagMin = Mathf.Min(_diagMin, turned);
-				_diagMax = Mathf.Max(_diagMax, turned);
-				_diagScope = scopeAngle;
-				_diagDistance = distance;
+				stat = new Stat();
+				Stats[id] = stat;
+			}
+
+			if (skipReason == null)
+			{
+				stat.Applied++;
+				stat.Min = Mathf.Min(stat.Min, turned);
+				stat.Max = Mathf.Max(stat.Max, turned);
+				stat.Off = off;
+				stat.Distance = distance;
 			}
 			else
 			{
-				_diagSkipped++;
+				stat.Skipped++;
+				stat.Reason = skipReason;
 			}
 
-			_diagWhat = what;
-			if (Time.unscaledTime < _diagNext)
+			if (Time.unscaledTime < stat.Next)
 			{
 				return;
 			}
 
-			_diagNext = Time.unscaledTime + 1f;
-			if (_diagApplied > 0)
+			stat.Next = Time.unscaledTime + 1f;
+			if (stat.Applied > 0)
 			{
-				Plugin.Verbose($"Aim tilt stats ({_diagWhat}): zero {_diagDistance} m, applied {_diagApplied}x, skipped {_diagSkipped}x, turn {_diagMin:0.0000} to {_diagMax:0.0000} degrees, sight axis off my computed line by {_diagScope:0.0000} degrees");
+				Plugin.Verbose($"Aim tilt stats ({what} {id} on {part.transform.parent?.name}): zero {stat.Distance} m, applied {stat.Applied}x, skipped {stat.Skipped}x, turn {stat.Min:0.0000} to {stat.Max:0.0000} degrees, sight axis off my computed line by {stat.Off:0.0000} degrees");
+			}
+			else if (stat.Skipped > 0)
+			{
+				Plugin.Verbose($"Aim tilt stats ({what} {id} on {part.transform.parent?.name}): only skipped, {stat.Skipped}x, because {stat.Reason}");
 			}
 
-			_diagApplied = _diagSkipped = 0;
-			_diagMin = float.MaxValue;
-			_diagMax = 0f;
+			stat.Applied = stat.Skipped = 0;
+			stat.Min = float.MaxValue;
+			stat.Max = 0f;
 		}
 
 		// Where the sight you aim through really looks: the optic's lens (or the red dot's), after the game turned it for the zero
