@@ -83,7 +83,11 @@ namespace CustomRpTweaks.Client
 			}
 
 			var axis = SightAxis(scope);
-			var turn = Between(fromShortest.normalized, toPoint.normalized);
+			// Only the weapon's vertical (pitch) change between the two sight lines is applied, about the weapon's own right axis; the beam's
+			// sideways direction, and so the sideways offset of the mount, is never touched
+			var origin = animation.GetWorldCalibrationPoint(Vector3.zero);
+			var right = (animation.GetWorldCalibrationPoint(Vector3.right) - origin).normalized;
+			var turn = VerticalTurn(fromShortest.normalized, toPoint.normalized, right);
 			var state = new State { Applied = true, Target = target, Rotation = target.rotation };
 			target.rotation = turn * target.rotation;
 			var direction = target.forward;
@@ -233,6 +237,21 @@ namespace CustomRpTweaks.Client
 			}
 
 			return cosine <= 0f ? Quaternion.FromToRotation(from, to) : Quaternion.AngleAxis(Mathf.Atan2(sine, cosine) * Mathf.Rad2Deg, cross / sine);
+		}
+
+		// The turn about the axis "right" that takes the pitch of the first direction to the pitch of the second (both are flattened onto the plane
+		// across that axis first); exact for tiny angles
+		private static Quaternion VerticalTurn(Vector3 from, Vector3 to, Vector3 right)
+		{
+			var a = Vector3.ProjectOnPlane(from, right);
+			var b = Vector3.ProjectOnPlane(to, right);
+			if (a.sqrMagnitude < 1e-9f || b.sqrMagnitude < 1e-9f)
+			{
+				return Quaternion.identity;
+			}
+
+			var angle = Mathf.Atan2(Vector3.Dot(Vector3.Cross(a, b), right), Vector3.Dot(a, b)) * Mathf.Rad2Deg;
+			return Quaternion.AngleAxis(angle, right);
 		}
 
 		private static float AngleBetween(Vector3 a, Vector3 b) => Mathf.Atan2(Vector3.Cross(a, b).magnitude, Vector3.Dot(a, b)) * Mathf.Rad2Deg;
