@@ -54,15 +54,39 @@ namespace CustomRpTweaks.Client
 				return none;
 			}
 
-			// The sight's own axis, the one the game itself turns toward the zero point and the reticle follows; my own line to the zero point
-			// is only the fallback (and what the stats compare it with)
-			var axis = SightAxis(scope);
-			var direction = axis ?? toPoint.normalized;
+			// Vanilla is the base: the laser keeps pointing along the barrel at the sight's shortest zero, where its dot has the offset a mount
+			// gives it (beside the barrel, on the scope rail...). From there the beam is turned by exactly the angle the sight line turned when the
+			// zero went longer, so that offset stays the same at every zero. A beam parallel to the sight line instead would sit the laser's whole
+			// height below the scope's line, which vanilla does not (its sight line dips toward the barrel axis).
+			var scopeIndex = sight.SelectedScopeIndex;
+			var steps = sight.GetScopeCalibrationDistances(scopeIndex);
+			var points = sight.OpticCalibrationPoints != null && scopeIndex < sight.OpticCalibrationPoints.Length ? sight.OpticCalibrationPoints[scopeIndex] : null;
+			if (steps == null || points == null || steps.Length == 0 || steps.Length != points.Length)
+			{
+				Diagnose(part, what, "the sight's zero steps and points do not match", 0f, 0f, 0);
+				return none;
+			}
 
-			// Parallel to the sight line, not aimed at anything: the laser keeps its own position, so its dot keeps the offset of wherever it is
-			// mounted (beside the barrel, on the scope rail...), as a real, boresighted laser does
+			var shortest = 0;
+			for (var i = 1; i < steps.Length; i++)
+			{
+				if (steps[i] < steps[shortest])
+				{
+					shortest = i;
+				}
+			}
+
+			var fromShortest = animation.GetWorldCalibrationPoint(points[shortest]) - scopePosition;
+			if (fromShortest.sqrMagnitude < 1f)
+			{
+				return none;
+			}
+
+			var axis = SightAxis(scope);
+			var turn = Between(fromShortest.normalized, toPoint.normalized);
 			var state = new State { Applied = true, Target = target, Rotation = target.rotation };
-			target.rotation = Between(target.forward, direction) * target.rotation;
+			target.rotation = turn * target.rotation;
+			var direction = target.forward;
 			var turned = AngleBetween(state.Rotation * Vector3.forward, target.forward);
 			var scopeAngle = axis.HasValue ? Vector3.Angle(axis.Value, toPoint) : -1f;
 			Diagnose(part, what, null, turned, scopeAngle, sight.GetCurrentOpticCalibrationDistance(), Plugin.VerboseOn ? PointInfo(sight) : null);
@@ -70,7 +94,7 @@ namespace CustomRpTweaks.Client
 			if (Time.unscaledTime >= _nextLog)
 			{
 				_nextLog = Time.unscaledTime + 2f;
-				Plugin.Verbose($"Aim tilt: {what} turned {turned:0.000} degrees toward the zero point ({sight.GetCurrentOpticCalibrationDistance()} m)");
+				Plugin.Verbose($"Aim tilt: {what} turned {turned:0.000} degrees since the shortest zero ({sight.GetCurrentOpticCalibrationDistance()} m)");
 			}
 
 			return state;
