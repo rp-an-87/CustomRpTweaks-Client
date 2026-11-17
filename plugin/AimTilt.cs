@@ -28,7 +28,7 @@ namespace CustomRpTweaks.Client
 		}
 
 		// Turns the transform toward the sight line's point of zero; the state tells Restore what to undo
-		internal static State Apply(Component part, Transform target, ConfigEntryBool enabled, string what)
+		internal static State Apply(Component part, Transform target, ConfigEntryBool enabled, string what, LaserBeam converge = null)
 		{
 			var none = default(State);
 			if (!enabled.Value || part == null || target == null)
@@ -45,23 +45,40 @@ namespace CustomRpTweaks.Client
 				return none;
 			}
 
-			// Parallel to the sight line (from the scope through the point of the zero), not aimed at that point: a beam aimed at the point
-			// crosses the sight line there and drifts away from it beyond, badly so on a short zero
 			var point = animation.GetWorldCalibrationPoint(sight.GetCurrentOpticCalibrationPoint());
 			var scope = animation.CurrentScope;
-			var toPoint = point - (scope != null && scope.Bone != null ? scope.Bone.position : target.position);
+			var scopePosition = scope != null && scope.Bone != null ? scope.Bone.position : target.position;
+			var toPoint = point - scopePosition;
 			if (toPoint.sqrMagnitude < 1f)
 			{
 				return none;
 			}
 
-			// The sight's own axis, the one the game itself turns toward the zero point and the reticle follows, is what the beam runs
-			// parallel to; my own line to the zero point is only the fallback (and what the stats compare it with)
+			// The sight's own axis, the one the game itself turns toward the zero point and the reticle follows; my own line to the zero point
+			// is only the fallback (and what the stats compare it with)
 			var axis = SightAxis(scope);
 			var direction = axis ?? toPoint.normalized;
+
+			// A laser is aimed at the spot the sight line hits, so its dot lands on the reticle at any distance and from either side. A beam
+			// only parallel to the sight line would sit the laser's mount offset (a few cm) off the reticle. Nothing hit: parallel.
+			if (converge != null)
+			{
+				// The sight line is cast from as far forward as the laser itself starts, so the shooter's own body is not hit
+				var along = Mathf.Max(0f, Vector3.Dot(target.position - scopePosition, direction));
+				var origin = scopePosition + direction * (along + converge.RayStart);
+				if (Physics.Raycast(origin, direction, out var hit, converge.MaxDistance, converge.Mask))
+				{
+					var toHit = hit.point - target.position;
+					if (toHit.sqrMagnitude > 0.25f)
+					{
+						direction = toHit.normalized;
+					}
+				}
+			}
+
 			var state = new State { Applied = true, Target = target, Rotation = target.rotation };
-			target.rotation = Quaternion.FromToRotation(target.forward, direction) * target.rotation;
-			var turned = Vector3.Angle(state.Rotation * Vector3.forward, target.forward);
+			target.rotation = Between(target.forward, direction) * target.rotation;
+			var turned = AngleBetween(state.Rotation * Vector3.forward, target.forward);
 			var scopeAngle = axis.HasValue ? Vector3.Angle(axis.Value, toPoint) : -1f;
 			Diagnose(part, what, null, turned, scopeAngle, sight.GetCurrentOpticCalibrationDistance(), Plugin.VerboseOn ? PointInfo(sight) : null);
 			TraceFlip(part, what, turned, state.Rotation * Vector3.forward, direction, toPoint.normalized, target.position, scope != null && scope.Bone != null ? scope.Bone.position : target.position);
@@ -194,6 +211,23 @@ namespace CustomRpTweaks.Client
 			return lens == null ? (Vector3?)null : lens.forward.normalized;
 		}
 
+		// Unity's FromToRotation returns "no turn" for angles under about 0.08 degrees, and Vector3.Angle is coarse there too; the tilt is
+		// that small on a short zero, so the turn is built from the cross product, which stays exact for small angles
+		private static Quaternion Between(Vector3 from, Vector3 to)
+		{
+			var cross = Vector3.Cross(from, to);
+			var sine = cross.magnitude;
+			var cosine = Vector3.Dot(from, to);
+			if (sine < 1e-9f)
+			{
+				return Quaternion.identity;
+			}
+
+			return cosine <= 0f ? Quaternion.FromToRotation(from, to) : Quaternion.AngleAxis(Mathf.Atan2(sine, cosine) * Mathf.Rad2Deg, cross / sine);
+		}
+
+		private static float AngleBetween(Vector3 a, Vector3 b) => Mathf.Atan2(Vector3.Cross(a, b).magnitude, Vector3.Dot(a, b)) * Mathf.Rad2Deg;
+
 		internal static void Restore(State state)
 		{
 			if (state.Applied && state.Target != null)
@@ -251,7 +285,7 @@ namespace CustomRpTweaks.Client
 		{
 			try
 			{
-				__state = AimTilt.Apply(__instance, __instance.transform, new ConfigEntryBool(Plugin.LaserFollowsZero), "laser");
+				__state = AimTilt.Apply(__instance, __instance.transform, new ConfigEntryBool(Plugin.LaserFollowsZero), "laser", __instance);
 			}
 			catch (Exception e)
 			{
