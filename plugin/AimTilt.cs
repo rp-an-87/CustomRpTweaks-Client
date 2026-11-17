@@ -28,7 +28,7 @@ namespace CustomRpTweaks.Client
 		}
 
 		// Turns the transform toward the sight line's point of zero; the state tells Restore what to undo
-		internal static State Apply(Component part, Transform target, ConfigEntryBool enabled, string what, LaserBeam converge = null)
+		internal static State Apply(Component part, Transform target, ConfigEntryBool enabled, string what)
 		{
 			var none = default(State);
 			if (!enabled.Value || part == null || target == null)
@@ -59,23 +59,8 @@ namespace CustomRpTweaks.Client
 			var axis = SightAxis(scope);
 			var direction = axis ?? toPoint.normalized;
 
-			// A laser is aimed at the spot the sight line hits, so its dot lands on the reticle at any distance and from either side. A beam
-			// only parallel to the sight line would sit the laser's mount offset (a few cm) off the reticle. Nothing hit: parallel.
-			if (converge != null)
-			{
-				// The sight line is cast from as far forward as the laser itself starts, so the shooter's own body is not hit
-				var along = Mathf.Max(0f, Vector3.Dot(target.position - scopePosition, direction));
-				var origin = scopePosition + direction * (along + converge.RayStart);
-				if (Physics.Raycast(origin, direction, out var hit, converge.MaxDistance, converge.Mask))
-				{
-					var toHit = hit.point - target.position;
-					if (toHit.sqrMagnitude > 0.25f)
-					{
-						direction = toHit.normalized;
-					}
-				}
-			}
-
+			// Parallel to the sight line, not aimed at anything: the laser keeps its own position, so its dot keeps the offset of wherever it is
+			// mounted (beside the barrel, on the scope rail...), as a real, boresighted laser does
 			var state = new State { Applied = true, Target = target, Rotation = target.rotation };
 			target.rotation = Between(target.forward, direction) * target.rotation;
 			var turned = AngleBetween(state.Rotation * Vector3.forward, target.forward);
@@ -285,7 +270,7 @@ namespace CustomRpTweaks.Client
 		{
 			try
 			{
-				__state = AimTilt.Apply(__instance, __instance.transform, new ConfigEntryBool(Plugin.LaserFollowsZero), "laser", __instance);
+				__state = AimTilt.Apply(__instance, __instance.transform, new ConfigEntryBool(Plugin.LaserFollowsZero), "laser");
 			}
 			catch (Exception e)
 			{
