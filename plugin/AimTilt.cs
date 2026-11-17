@@ -63,7 +63,7 @@ namespace CustomRpTweaks.Client
 			target.rotation = Quaternion.FromToRotation(target.forward, direction) * target.rotation;
 			var turned = Vector3.Angle(state.Rotation * Vector3.forward, target.forward);
 			var scopeAngle = axis.HasValue ? Vector3.Angle(axis.Value, toPoint) : -1f;
-			Diagnose(part, what, null, turned, scopeAngle, sight.GetCurrentOpticCalibrationDistance());
+			Diagnose(part, what, null, turned, scopeAngle, sight.GetCurrentOpticCalibrationDistance(), Plugin.VerboseOn ? PointInfo(sight) : null);
 			TraceFlip(part, what, turned, state.Rotation * Vector3.forward, direction, toPoint.normalized, target.position, scope != null && scope.Bone != null ? scope.Bone.position : target.position);
 			if (Time.unscaledTime >= _nextLog)
 			{
@@ -80,13 +80,13 @@ namespace CustomRpTweaks.Client
 		{
 			internal int Applied, Skipped, Distance;
 			internal float Min = float.MaxValue, Max, Off;
-			internal string Reason = string.Empty;
+			internal string Reason = string.Empty, Point = string.Empty;
 			internal float Next;
 		}
 
 		private static readonly Dictionary<int, Stat> Stats = new Dictionary<int, Stat>();
 
-		private static void Diagnose(Component part, string what, string skipReason, float turned, float off, int distance)
+		private static void Diagnose(Component part, string what, string skipReason, float turned, float off, int distance, string point = null)
 		{
 			if (!Plugin.VerboseOn || part == null)
 			{
@@ -107,6 +107,7 @@ namespace CustomRpTweaks.Client
 				stat.Max = Mathf.Max(stat.Max, turned);
 				stat.Off = off;
 				stat.Distance = distance;
+				stat.Point = point ?? string.Empty;
 			}
 			else
 			{
@@ -122,7 +123,7 @@ namespace CustomRpTweaks.Client
 			stat.Next = Time.unscaledTime + 1f;
 			if (stat.Applied > 0)
 			{
-				Plugin.Verbose($"Aim tilt stats ({what} {id} on {part.transform.parent?.name}): zero {stat.Distance} m, applied {stat.Applied}x, skipped {stat.Skipped}x, turn {stat.Min:0.0000} to {stat.Max:0.0000} degrees, sight axis off my computed line by {stat.Off:0.0000} degrees");
+				Plugin.Verbose($"Aim tilt stats ({what} {id} on {part.transform.parent?.name}): zero {stat.Distance} m, applied {stat.Applied}x, skipped {stat.Skipped}x, turn {stat.Min:0.0000} to {stat.Max:0.0000} degrees, sight axis off my computed line by {stat.Off:0.0000} degrees, {stat.Point}");
 			}
 			else if (stat.Skipped > 0)
 			{
@@ -132,6 +133,14 @@ namespace CustomRpTweaks.Client
 			stat.Applied = stat.Skipped = 0;
 			stat.Min = float.MaxValue;
 			stat.Max = 0f;
+		}
+
+		private static string PointInfo(SightComponent sight)
+		{
+			var scope = sight.SelectedScopeIndex;
+			var steps = sight.GetScopeCalibrationDistances(scope);
+			var point = sight.GetCurrentOpticCalibrationPoint();
+			return $"point ({point.x:0.0000}, {point.y:0.0000}, {point.z:0.0000}) index {sight.GetCurrentOpticCalibrationPointIndex(scope)} of {(steps == null ? 0 : steps.Length)} [{(steps == null ? string.Empty : string.Join(",", steps))}]";
 		}
 
 		// Verbose only: when the turn jumps from one frame to the next, the numbers of that frame and the one before are logged (at most 30 times)
