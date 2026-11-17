@@ -52,9 +52,9 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<KeyboardShortcut> ZeroResetHotkey;
 		internal static ConfigEntry<bool> AmmoZeroEnabled;
 		internal static ConfigEntry<bool> FineZeroSteps;
-		internal static ConfigEntry<bool> LaserFollowsZero;
+		internal static ConfigEntry<bool> LaserZeroPitch;
 		internal static ConfigEntry<bool> ZeroKeepsAim;
-		internal static ConfigEntry<bool> RangefinderFollowsZero;
+		internal static ConfigEntry<bool> RangefinderZeroPitch;
 		internal static ConfigEntry<string> FineZeroStepList;
 		internal static ConfigEntry<bool> BipodVisualFix;
 		internal static ConfigEntry<bool> BipodRelax;
@@ -261,10 +261,10 @@ namespace CustomRpTweaks.Client
 			AmmoZero.ReloadSteps();
 			FineZeroStepList.SettingChanged += (sender, args) => AmmoZero.ReloadSteps();
 			FineZeroSteps.SettingChanged += (sender, args) => AmmoZero.ReloadSteps();
-			LaserFollowsZero = Config.Bind("19. Aiming", "3a4. Laser follows the zero while aiming", true,
-				"EXPERIMENT. While you aim through a sight, the laser beam of the device on your weapon stays as in vanilla at the shortest zero of the sight (the dot has the offset its mount gives it) and is turned by the same angle the sight line turns when you zero longer, so the dot keeps that same offset from your reticle at every zero. Off the sights, or on iron sights, nothing changes. The device itself does not move. Turn on verbose logging to see the turn (lines starting with Aim tilt:).");
-			RangefinderFollowsZero = Config.Bind("19. Aiming", "3a5. Rangefinder follows the zero while aiming", true,
-				"EXPERIMENT. The same for the rangefinder built into the device (RAPTAR): while you aim through a sight it measures along your sight line, so the reading is the distance to what your reticle is on, and the zero-from-rangefinder hotkey uses it. Off the sights nothing changes.");
+			LaserZeroPitch = Config.Bind("19. Aiming", "3a4. Laser: vertical correction for the zero", true,
+				"EXPERIMENT. In vanilla the laser stays along the barrel while your sight line dips toward it the longer the zero is, so the dot walks up from the reticle at longer zeros. While you aim through a sight, this turns the laser up or down (never sideways) by the pitch the sight line has changed since the sight's shortest zero. At that zero it is exactly vanilla, so every mount keeps the offset vanilla gives it (beside the barrel, on a scope rail...), and that offset stays the same at every zero. Off the sights, or on iron sights, nothing changes. The device itself does not move. Turn on verbose logging to see the turn (lines starting with Aim tilt:).");
+			RangefinderZeroPitch = Config.Bind("19. Aiming", "3a5. Rangefinder: vertical correction for the zero", true,
+				"EXPERIMENT. The same vertical correction for the rangefinder built into the device (RAPTAR): while you aim through a sight its measuring ray is corrected for the zero, so the reading is the distance to what your reticle is on, and the zero-from-rangefinder hotkey uses it. Off the sights nothing changes.");
 			ZeroKeepsAim = Config.Bind("19. Aiming", "3a6. Changing the zero keeps your aim on target", true,
 				"EXPERIMENT. When the zero of the sight you aim through changes by a step (the game's keys, the rangefinder hotkey or the reset hotkey), the game turns the sight relative to the gun, so the reticle jumps up or down. With this on, your aim is moved by the same angle the other way, so the reticle stays on what it was on. Turn on verbose logging to see the angle (lines starting with Zero keeps aim:).");
 			BipodVisualFix = Config.Bind("19. Aiming", "3c. Fix the bipod looking deployed when it is not", true,
@@ -283,9 +283,9 @@ namespace CustomRpTweaks.Client
 				new ConfigDescription("1 is level ground; the game wants 0.94 (about 20 degrees), the server's setting is 0.82 (about 35). 0.7 is about 45 degrees. The lower of this and the server's setting is used.", new AcceptableValueRange<float>(0.3f, 1f)));
 			new RelaxedProneBipodPatch().Enable();
 			new RangefinderReadingPatch().Enable();
-			new LaserFollowsZeroPatch().Enable();
+			new LaserZeroPitchPatch().Enable();
 			new ZeroKeepsAimPatch().Enable();
-			new RangefinderFollowsZeroPatch().Enable();
+			new RangefinderZeroPitchPatch().Enable();
 			new AmmoZeroCalibrationPatch().Enable();
 			new AmmoZeroIronPatch().Enable();
 			new FineZeroStepsPatch().Enable();

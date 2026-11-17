@@ -11,10 +11,12 @@ using UnityEngine;
 
 namespace CustomRpTweaks.Client
 {
-	// While you aim through a sight, the laser beam and the rangefinder's measuring ray of the device on your weapon point along your sight line
-	// (at the sight line), not along the barrel. The turn is applied only for the moment the beam is drawn or the ray is cast
-	// and is undone straight after, so the device model never moves. Off the sights nothing changes.
-	internal static class AimTilt
+	// Vertical (pitch) correction for the zero. In vanilla the laser beam and the rangefinder's measuring ray stay along the barrel while the
+	// sight line dips toward it the longer the zero is, so the dot or the ray walks up from the reticle as you zero longer. While you aim through a
+	// sight, the device is turned for the moment the beam is drawn or the ray is cast (and straight back after, so the model never moves) by only
+	// the pitch the sight line has turned since the sight's shortest zero. At that zero it is exactly vanilla; the sideways direction is never
+	// touched, so every mount keeps the offset vanilla gives it. Off the sights nothing changes.
+	internal static class ZeroPitch
 	{
 		private static Weapon _cachedWeapon;
 		private static readonly Dictionary<int, bool> Mine = new Dictionary<int, bool>();
@@ -98,7 +100,7 @@ namespace CustomRpTweaks.Client
 			if (Time.unscaledTime >= _nextLog)
 			{
 				_nextLog = Time.unscaledTime + 2f;
-				Plugin.Verbose($"Aim tilt: {what} turned {turned:0.000} degrees since the shortest zero ({sight.GetCurrentOpticCalibrationDistance()} m)");
+				Plugin.Verbose($"Zero pitch: {what} turned {turned:0.000} degrees since the shortest zero ({sight.GetCurrentOpticCalibrationDistance()} m)");
 			}
 
 			return state;
@@ -153,11 +155,11 @@ namespace CustomRpTweaks.Client
 			stat.Next = Time.unscaledTime + 1f;
 			if (stat.Applied > 0)
 			{
-				Plugin.Verbose($"Aim tilt stats ({what} {id} on {part.transform.parent?.name}): zero {stat.Distance} m, applied {stat.Applied}x, skipped {stat.Skipped}x, turn {stat.Min:0.0000} to {stat.Max:0.0000} degrees, sight axis off my computed line by {stat.Off:0.0000} degrees, {stat.Point}");
+				Plugin.Verbose($"Zero pitch stats ({what} {id} on {part.transform.parent?.name}): zero {stat.Distance} m, applied {stat.Applied}x, skipped {stat.Skipped}x, turn {stat.Min:0.0000} to {stat.Max:0.0000} degrees, sight axis off my computed line by {stat.Off:0.0000} degrees, {stat.Point}");
 			}
 			else if (stat.Skipped > 0)
 			{
-				Plugin.Verbose($"Aim tilt stats ({what} {id} on {part.transform.parent?.name}): only skipped, {stat.Skipped}x, because {stat.Reason}");
+				Plugin.Verbose($"Zero pitch stats ({what} {id} on {part.transform.parent?.name}): only skipped, {stat.Skipped}x, because {stat.Reason}");
 			}
 
 			stat.Applied = stat.Skipped = 0;
@@ -193,7 +195,7 @@ namespace CustomRpTweaks.Client
 			if (LastTurn.TryGetValue(id, out var before) && Mathf.Abs(turned - before) > 0.04f && _traces < 30)
 			{
 				_traces++;
-				Plugin.Verbose($"Aim tilt flip ({what} {id}): before [{_lastTrace}] now [{now}]");
+				Plugin.Verbose($"Zero pitch flip ({what} {id}): before [{_lastTrace}] now [{now}]");
 			}
 
 			LastTurn[id] = turned;
@@ -302,28 +304,28 @@ namespace CustomRpTweaks.Client
 		internal bool Value => _entry != null && _entry.Value;
 	}
 
-	internal class LaserFollowsZeroPatch : ModulePatch
+	internal class LaserZeroPitchPatch : ModulePatch
 	{
 		private static readonly FieldInfo LightField = AccessTools.Field(typeof(LaserBeam), "_light");
 
 		protected override MethodBase GetTargetMethod() => typeof(LaserBeam).GetMethod(nameof(LaserBeam.LateUpdate), BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly);
 
 		[PatchPrefix]
-		private static void Prefix(LaserBeam __instance, out AimTilt.State __state)
+		private static void Prefix(LaserBeam __instance, out ZeroPitch.State __state)
 		{
 			try
 			{
-				__state = AimTilt.Apply(__instance, __instance.transform, new ConfigEntryBool(Plugin.LaserFollowsZero), "laser");
+				__state = ZeroPitch.Apply(__instance, __instance.transform, new ConfigEntryBool(Plugin.LaserZeroPitch), "laser");
 			}
 			catch (Exception e)
 			{
 				__state = default;
-				Plugin.Verbose($"Aim tilt (laser): {e.Message}");
+				Plugin.Verbose($"Zero pitch (laser): {e.Message}");
 			}
 		}
 
 		[PatchPostfix]
-		private static void Postfix(LaserBeam __instance, AimTilt.State __state)
+		private static void Postfix(LaserBeam __instance, ZeroPitch.State __state)
 		{
 			if (!__state.Applied)
 			{
@@ -334,7 +336,7 @@ namespace CustomRpTweaks.Client
 			var light = LightField?.GetValue(__instance) as Light;
 			var position = light == null ? Vector3.zero : light.transform.position;
 			var rotation = light == null ? Quaternion.identity : light.transform.rotation;
-			AimTilt.Restore(__state);
+			ZeroPitch.Restore(__state);
 			if (light != null)
 			{
 				light.transform.SetPositionAndRotation(position, rotation);
@@ -342,25 +344,25 @@ namespace CustomRpTweaks.Client
 		}
 	}
 
-	internal class RangefinderFollowsZeroPatch : ModulePatch
+	internal class RangefinderZeroPitchPatch : ModulePatch
 	{
 		protected override MethodBase GetTargetMethod() => typeof(TacticalRangeFinderController).GetMethod(nameof(TacticalRangeFinderController.MeasureDistance), BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly);
 
 		[PatchPrefix]
-		private static void Prefix(TacticalRangeFinderController __instance, out AimTilt.State __state)
+		private static void Prefix(TacticalRangeFinderController __instance, out ZeroPitch.State __state)
 		{
 			try
 			{
-				__state = AimTilt.Apply(__instance, __instance._boneToCastRay, new ConfigEntryBool(Plugin.RangefinderFollowsZero), "rangefinder");
+				__state = ZeroPitch.Apply(__instance, __instance._boneToCastRay, new ConfigEntryBool(Plugin.RangefinderZeroPitch), "rangefinder");
 			}
 			catch (Exception e)
 			{
 				__state = default;
-				Plugin.Verbose($"Aim tilt (rangefinder): {e.Message}");
+				Plugin.Verbose($"Zero pitch (rangefinder): {e.Message}");
 			}
 		}
 
 		[PatchPostfix]
-		private static void Postfix(AimTilt.State __state) => AimTilt.Restore(__state);
+		private static void Postfix(ZeroPitch.State __state) => ZeroPitch.Restore(__state);
 	}
 }
