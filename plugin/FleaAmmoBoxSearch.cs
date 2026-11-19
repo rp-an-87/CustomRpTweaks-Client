@@ -160,8 +160,7 @@ namespace CustomRpTweaks.Client
 
 			// Pick the ammo the way a click on its row does: the screen's own handler makes the request, and when the answer arrives the screen
 			// deselects the row it had and highlights this one. (Highlighting the row directly would leave the screen not knowing about it.)
-			var offerList = UnityEngine.Object.FindObjectsOfType<OfferViewList>().FirstOrDefault(view => view.isActiveAndEnabled
-				&& typeof(OfferViewList).GetField("_browseCategoriesPanel", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(view) == panel);
+			var offerList = UnityEngine.Object.FindObjectsOfType<OfferViewList>().FirstOrDefault(view => view.isActiveAndEnabled && view._browseCategoriesPanel == panel);
 			if (offerList == null)
 			{
 				Plugin.Log.LogWarning("Ammo box search: the flea market's offer list wasn't found, the tree is filled but nothing was picked");
