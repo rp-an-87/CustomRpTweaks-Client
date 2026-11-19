@@ -44,6 +44,7 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<bool> HideoutQuickBuy;
 		internal static ConfigEntry<QuickBuyMode> HideoutBuyMode;
 		internal static ConfigEntry<bool> HideoutBuyTools;
+		internal static ConfigEntry<bool> HideoutUpgradeQuickBuy;
 		internal static ConfigEntry<bool> HideoutFuelRefill;
 		internal static ConfigEntry<KeyboardShortcut> RangefinderZeroHotkey;
 		internal static ConfigEntry<RangefinderRounding> RangefinderZeroRounding;
@@ -244,6 +245,8 @@ namespace CustomRpTweaks.Client
 				"What the buy button buys. Buy all: everything the craft asks for, whatever you hold. Buy missing: only what you don't hold. Buy missing, found-in-raid items don't count: like Buy missing, but your found-in-raid items are not counted as held, so they are kept (the craft takes items that are not found in raid first).");
 			HideoutBuyTools = Config.Bind("02. Hideout", "3. Buy missing tools too", true,
 				"The buy button also buys the tools of the craft (the wrench-marked requirements, which are reused and not used up) that you don't have. A tool you hold is never bought again, in any mode. Off: tools are left out, the craft still needs them in your stash.");
+			HideoutUpgradeQuickBuy = Config.Bind("02. Hideout", "5. Buy hideout upgrade items with a button", true,
+				"A flea market button to the left of the item requirements of a hideout area upgrade, the same as the craft buy button: it buys the items the upgrade is missing, by the craft buy mode (setting 2) and the same price rules, and hovering it shows what it would buy and cost. Found-in-raid requirements are never bought: if you are short of one, the rest is still bought and the button is tinted red and the tooltip says what is missing. There is no confirmation: the click buys, pressing Upgrade is still up to you. Takes effect the next time an upgrade screen is opened.");
 			HideoutFuelRefill = Config.Bind("02. Hideout", "4. Refill button on the generator and water collector slots", true,
 				"A Refill button over a generator fuel slot or the water collector's filter slot that is empty or whose contents ran out (the water collector takes Water filters: the same rules, with only the one item). It buys one full fuel tank on the flea market (traders' offers included, the cheapest full one) and puts it in the slot; the empty tank goes back to your stash. It first uses a tank already in your stash that still has fuel (Metal before Expeditionary, the fullest first). Otherwise it buys, in order: a Metal fuel tank at a normal price, an Expeditionary fuel tank at a normal price, then (nothing at a normal price) a Metal tank at an overstock price, then an Expeditionary one. The button's text is white at a normal price, orange at an overstock price, red when nothing can be bought or paid for. Hover the button for what it would buy and cost (an overstock price is shown in orange with the normal price). Takes effect the next time the fuel screen is opened.");
 			RangefinderZeroHotkey = Config.Bind("19. Aiming", "2. Zero from rangefinder hotkey", new KeyboardShortcut(KeyCode.PageUp, KeyCode.LeftAlt),
@@ -296,6 +299,7 @@ namespace CustomRpTweaks.Client
 			new HideoutQuickBuy.BuyMaterialsPatch().Enable();
 			new HideoutQuickBuy.StartButtonPatch().Enable();
 			new HideoutQuickBuy.BuyTooltipPatch().Enable();
+			new HideoutUpgradeBuy.RequirementsPatch().Enable();
 			KeepSpeedWhileZooming = Config.Bind("20. Movement", "1. Keep walk speed while zooming a scope", false,
 				"The mouse wheel changes both your walk speed and the zoom of a smooth-zoom scope. With this on, the wheel does not change your walk speed while you aim through a smooth-zoom (variable) scope and hold your scope zoom key combination (for example Alt + wheel). The wheel alone, other sights and not aiming are not affected.");
 			new ScopeZoomSpeedPatch().Enable();

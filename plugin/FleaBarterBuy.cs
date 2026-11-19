@@ -80,7 +80,23 @@ namespace CustomRpTweaks.Client
 			Setting = Plugin.HideoutBuyMode.Value
 		};
 
+		// The item requirements of an area upgrade: the same rules as a craft, but a found-in-raid requirement short in the stash doesn't stop
+		// the buy (you may be buying ahead): the rest is bought and the tooltip says what is missing
+		internal static Source UpgradeSource(ItemRequirement[] requirements, Action refresh) => new Source
+		{
+			Requirements = requirements.Cast<IExchangeRequirement>().ToArray(),
+			Required = requirement => requirement.IntCount,
+			Suitable = (item, requirement) => ItemRequirement.IsSuitableItem(requirement, item) && item.IsEmpty(),
+			NeedsFir = requirement => requirement.IsSpawnedInSession,
+			Stash = () => Singleton<HideoutRepresentation>.Instance.AllStashItems.Where(item => item != null).ToList(),
+			Refresh = refresh,
+			UnbuyableBlocks = false,
+			Setting = Plugin.HideoutBuyMode.Value
+		};
+
 		internal static RagFair RagfairOf(ProduceView view) => view.ItemUiContext.Session.RagFair;
+
+		internal static async void StartUpgrade(Source src) => await Guard(async () => await Run(ItemUiContext.Instance.Session.RagFair, src));
 
 		// The craft screen only learns of items that arrive in the stash through the game's own events, which a flea market purchase doesn't
 		// raise: the hideout's list of stash items is rebuilt (it tells the screens), then the craft's requirements are drawn again
