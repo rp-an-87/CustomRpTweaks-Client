@@ -82,7 +82,13 @@ namespace CustomRpTweaks.Client
 			var ids = boxes.Concat(new[] { item.TemplateId.ToString() }).ToList();
 			Plugin.Verbose($"Flea: {item.ShortName.Localized()} listed with {boxes.Count} box(es) in the tree");
 			// Any search opens the flea market; this one only switches off the one-hour-expiration filter, which is off unless turned on
-			interactions.Search(new RagfairSearch(EFilterType.OneHourExpiration, 0, false));
+			// (when the flea market is already on screen there is nothing to open, and a search would only send one more request)
+			var open = UnityEngine.Object.FindObjectOfType<RagfairCategoriesPanel>();
+			if (open == null || !open.isActiveAndEnabled)
+			{
+				interactions.Search(new RagfairSearch(EFilterType.OneHourExpiration, 0, false));
+			}
+
 			Plugin.Instance.StartCoroutine(FillTree(interactions.UIContext, ids, (item.TemplateId.ToString() + " Name").Localized(), item.TemplateId.ToString()));
 			return true;
 		}
@@ -136,13 +142,39 @@ namespace CustomRpTweaks.Client
 
 			Plugin.Verbose($"Flea: tree built after {waited:0.00} s ({ViewCount(panel)} rows), filling it with {ids.Count} items");
 
-			// A Filter by item chip from an earlier search would narrow the list to that one item
 			var ragfair = uiContext?.Session?.RagFair;
-			var chip = ragfair?.CancellableFilters[EFilterType.FilterSearch];
-			if (chip != null)
+			if (ragfair != null)
 			{
-				ragfair.RemoveCancellableFilter(chip, true);
-				yield return null;
+				// Requests still on their way (the screen restores the last search as it opens) would land after ours and overwrite it: let them finish
+				// first. The game itself ignores clicks on the rows while this is on.
+				for (var guard = 0f; guard < 10f && ragfair.GettingOffers; guard += Time.unscaledDeltaTime)
+				{
+					yield return null;
+				}
+
+				// An item search from earlier (Filter by item, linked, barters) keeps the list and the tree narrowed to that item. Its chip is taken
+				// off without the game's callback, which would request the whole default category (a big, slow answer that can arrive after ours),
+				// and the rule is cleared of it by hand.
+				var cleared = false;
+				foreach (var type in new[] { EFilterType.FilterSearch, EFilterType.LinkedSearch, EFilterType.NeededSearch })
+				{
+					var chip = ragfair.CancellableFilters[type];
+					if (chip != null)
+					{
+						ragfair.RemoveCancellableFilter(chip, false);
+						cleared = true;
+					}
+				}
+
+				if (cleared)
+				{
+					var rule = ragfair.FilterRule;
+					rule.FilterSearchId = string.Empty;
+					rule.LinkedSearchId = string.Empty;
+					rule.NeededSearchId = string.Empty;
+					ragfair.FilterRule = rule;
+					yield return null;
+				}
 			}
 
 			panel.FilterHandler();
