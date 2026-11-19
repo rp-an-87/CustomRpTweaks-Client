@@ -96,26 +96,42 @@ namespace CustomRpTweaks.Client
 			type.GetField("_clearedAlready", BindingFlags.Instance | BindingFlags.NonPublic)?.SetValue(panel, false);
 		}
 
+		// How many rows the tree shows (the game keeps them in a protected dictionary)
+		private static int ViewCount(BrowseCategoriesPanel panel)
+		{
+			var member = typeof(BrowseCategoriesPanel).GetProperty("ViewNodes", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)?.GetValue(panel)
+				?? typeof(BrowseCategoriesPanel).GetField("ViewNodes", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)?.GetValue(panel);
+			return member is System.Collections.ICollection collection ? collection.Count : 0;
+		}
+
 		private static IEnumerator FillTree(ItemUiContext uiContext, List<string> ids, string name)
 		{
+			// The screen builds its own tree as it opens; filling before that is done gets overwritten (or wipes it). Wait until the tree has rows
+			// and has stayed that way for a moment.
 			RagfairCategoriesPanel panel = null;
-			for (var waited = 0f; waited < 8f; waited += Time.unscaledDeltaTime)
+			var settled = 0f;
+			var waited = 0f;
+			for (; waited < 10f; waited += Time.unscaledDeltaTime)
 			{
 				yield return null;
-				panel = UnityEngine.Object.FindObjectOfType<RagfairCategoriesPanel>();
-				if (panel != null && panel.isActiveAndEnabled && panel.Nodes != null && panel.FilteredNodes != null && ids.All(id => panel.Nodes[id] != null))
+				var found = UnityEngine.Object.FindObjectOfType<RagfairCategoriesPanel>();
+				var ready = found != null && found.isActiveAndEnabled && found.Nodes != null && found.FilteredNodes != null && ViewCount(found) > 0
+					&& ids.All(id => found.Nodes[id] != null);
+				settled = ready ? settled + Time.unscaledDeltaTime : 0f;
+				if (ready && settled > 0.5f)
 				{
+					panel = found;
 					break;
 				}
-
-				panel = null;
 			}
 
 			if (panel == null)
 			{
-				Plugin.Log.LogWarning("Ammo box search: the flea market's list didn't come up in time, nothing filled");
+				Plugin.Log.LogWarning("Ammo box search: the flea market's tree didn't come up in time, nothing filled");
 				yield break;
 			}
+
+			Plugin.Verbose($"Flea: tree ready after {waited:0.0} s ({ViewCount(panel)} rows), filling it with {ids.Count} items");
 
 			// A Filter by item chip from an earlier search would narrow the list to that one item
 			var ragfair = uiContext?.Session?.RagFair;
@@ -123,30 +139,29 @@ namespace CustomRpTweaks.Client
 			if (chip != null)
 			{
 				ragfair.RemoveCancellableFilter(chip, true);
+				yield return new WaitForSecondsRealtime(0.3f);
 			}
 
-			// The screen may still be filling its own list as it opens: fill, and fill again if it was overwritten
-			var selected = false;
-			for (var round = 0; round < 8 && panel != null; round++)
+			panel.FilterHandler();
+			foreach (var id in ids)
 			{
-				if (!ids.All(id => panel.FilteredNodes.ContainsKey(id)) || panel.FilteredNodes.Count != ids.Count)
-				{
-					panel.FilterHandler();
-					foreach (var id in ids)
-					{
-						panel.FilteredNodes.Add(id, panel.Nodes[id].CreateDummy(false));
-					}
+				panel.FilteredNodes.Add(id, panel.Nodes[id].CreateDummy(false));
+			}
 
-					selected = false;
-					ShowAsSearch(panel, name);
-				}
+			ShowAsSearch(panel, name);
 
-				yield return new WaitForSecondsRealtime(0.15f);
-				if (!selected && panel != null)
+			// The rows are made over the next frames; select the first as soon as it exists
+			for (var tries = 0; tries < 20 && panel != null; tries++)
+			{
+				yield return new WaitForSecondsRealtime(0.1f);
+				if (panel.SelectNode(ids[0]) != null)
 				{
-					selected = panel.SelectNode(ids[0]) != null;
+					Plugin.Verbose($"Flea: first row selected after {(tries + 1) * 0.1f:0.0} s");
+					yield break;
 				}
 			}
+
+			Plugin.Log.LogWarning($"Ammo box search: the rows were added but the first one could not be selected ({(panel == null ? 0 : ViewCount(panel))} rows)");
 		}
 	}
 
