@@ -15,13 +15,17 @@ using UnityEngine;
 namespace CustomRpTweaks.Client
 {
 	// Ammo can't be bought on the flea market, its boxes can. "Filter by item" (the menu entry, and the hotkey of UI Fixes, which runs the same
-	// game action) on an ammo item that has boxes on sale opens the flea market with no item chip: the ammo and its boxes are put into the left
-	// tree the way the game's own name search fills it (without its one-second wait), and the first box is selected; every row then makes the
-	// game's own request, with its own paging and sorting. Anything else, and ammo without a box on sale, keeps the game's own search.
+	// game action) on an ammo item that has boxes on sale runs as the game does it, untouched (chip, request, the result on screen at once).
+	// Once that has settled, the chip is taken off the way the X on it does (the list stays: it is the ammo's category), the ammo and its boxes
+	// are put into the left tree the way the game's own name search fills it, the ammo's name goes into the search box (clear it and the normal
+	// tree is back) and the ammo's row is highlighted. Every row is then the game's own search. Anything else keeps the game's own search.
 	internal static class FleaAmmoBoxSearch
 	{
 		// Ammo template id -> the boxes that hold it and can be listed on the flea market; built once, the templates don't change in a session
 		private static Dictionary<string, List<string>> _boxesOf;
+
+		// The latest Show task of each panel; the game builds the tree inside it (see FleaTreeShowPatch)
+		internal static readonly Dictionary<RagfairCategoriesPanel, Task> ShowTasks = new Dictionary<RagfairCategoriesPanel, Task>();
 
 		internal static List<string> BoxesFor(string ammoId)
 		{
@@ -63,34 +67,114 @@ namespace CustomRpTweaks.Client
 			return map;
 		}
 
-		// Called from the Filter by item action; true when the search was taken over (the game's own must not run)
-		internal static bool TreeSearch(BaseItemContextInteractions interactions)
+		// Called after the game's own Filter by item action has run
+		internal static void AfterFilter(BaseItemContextInteractions interactions)
 		{
 			var item = interactions.Item;
 			if (!Plugin.FleaAmmoBoxSearchEnabled.Value || !(item is Ammo))
 			{
-				return false;
+				return;
 			}
 
 			var boxes = BoxesFor(item.TemplateId.ToString());
 			if (boxes == null || boxes.Count == 0)
 			{
-				return false;
+				return;
 			}
 
 			// The ammo last: the boxes are what can be bought
 			var ids = boxes.Concat(new[] { item.TemplateId.ToString() }).ToList();
-			Plugin.Verbose($"Flea: {item.ShortName.Localized()} listed with {boxes.Count} box(es) in the tree");
-			// Any search opens the flea market; this one only switches off the one-hour-expiration filter, which is off unless turned on
-			// (when the flea market is already on screen there is nothing to open, and a search would only send one more request)
-			var open = UnityEngine.Object.FindObjectOfType<RagfairCategoriesPanel>();
-			if (open == null || !open.isActiveAndEnabled)
+			Plugin.Verbose($"Flea: {item.ShortName.Localized()} filtered by the game, adding {boxes.Count} box(es) to the tree after");
+			Plugin.Instance.StartCoroutine(AddBoxes(interactions.UIContext, ids, item.TemplateId.ToString(), (item.TemplateId.ToString() + " Name").Localized()));
+		}
+
+		private static IEnumerator AddBoxes(ItemUiContext uiContext, List<string> ids, string ammoId, string name)
+		{
+			// 1. The game's own search is done: the flea market is open and built, the chip of this ammo is on, and the request has been answered
+			RagfairCategoriesPanel panel = null;
+			RagFair ragfair = null;
+			var waited = 0f;
+			for (; waited < 20f; waited += Time.unscaledDeltaTime)
 			{
-				interactions.Search(new RagfairSearch(EFilterType.OneHourExpiration, 0, false));
+				yield return null;
+				ragfair = uiContext?.Session?.RagFair;
+				var found = UnityEngine.Object.FindObjectOfType<RagfairCategoriesPanel>();
+				if (ragfair != null && found != null && found.isActiveAndEnabled && found.Nodes != null && found.FilteredNodes != null && ids.All(id => found.Nodes[id] != null)
+					&& ShowTasks.TryGetValue(found, out var task) && task.IsCompleted
+					&& ragfair.CancellableFilters.IsActive(EFilterType.FilterSearch) && ragfair.FilterRule.FilterSearchId == ammoId)
+				{
+					panel = found;
+					break;
+				}
 			}
 
-			Plugin.Instance.StartCoroutine(FillTree(interactions.UIContext, ids, (item.TemplateId.ToString() + " Name").Localized(), item.TemplateId.ToString()));
-			return true;
+			if (panel == null)
+			{
+				Plugin.Log.LogWarning("Ammo box search: the game's own search didn't settle in time, the boxes were not added");
+				yield break;
+			}
+
+			yield return WaitIdle(ragfair);
+			Plugin.Verbose($"Flea: the game's search is on screen after {waited:0.00} s, chips [{Chips(ragfair)}]");
+
+			// 2. The chip narrows the tree to the one item and the game ignores clicks on its rows: off it goes, as the X on it does. The rule keeps the
+			// ammo as its category, so the list stays as it is.
+			var chip = ragfair.CancellableFilters[EFilterType.FilterSearch];
+			if (chip != null)
+			{
+				ragfair.RemoveCancellableFilter(chip, true);
+			}
+
+			yield return null;
+			yield return null;
+			yield return WaitIdle(ragfair);
+			for (var guard = 0f; guard < 10f; guard += Time.unscaledDeltaTime)
+			{
+				if (ShowTasks.TryGetValue(panel, out var rebuilt) && rebuilt.IsCompleted)
+				{
+					break;
+				}
+
+				yield return null;
+			}
+
+			// 3. The ammo and its boxes into the tree, the name into the box. If the screen rebuilds its tree after that (a second Show), do it again.
+			for (var round = 0; round < 3 && panel != null; round++)
+			{
+				var shown = ShowTasks[panel];
+				panel.FilterHandler();
+				foreach (var id in ids)
+				{
+					panel.FilteredNodes.Add(id, panel.Nodes[id].CreateDummy(false));
+				}
+
+				ShowAsSearch(panel, name);
+
+				// The rows' views are made over the next frames, and only a row with a view can be highlighted
+				for (var frames = 0; frames < 180 && panel.GetNode(ammoId) == null; frames++)
+				{
+					yield return null;
+				}
+
+				yield return null;
+				if (ShowTasks.TryGetValue(panel, out var latest) && latest == shown)
+				{
+					break;
+				}
+
+				Plugin.Verbose("Flea: the screen rebuilt its tree after the fill, filling again");
+			}
+
+			// 4. Highlight the ammo's row the way the screen does it itself
+			var offerList = UnityEngine.Object.FindObjectsOfType<OfferViewList>().FirstOrDefault(view => view.isActiveAndEnabled && view._browseCategoriesPanel == panel);
+			if (offerList == null)
+			{
+				Plugin.Log.LogWarning("Ammo box search: the flea market's offer list wasn't found, the tree is filled but the row was not highlighted");
+				yield break;
+			}
+
+			offerList.HandleNodeSelection(new OffersData(RagFair.EUpdatePagesStatus.DoNotUpdate, ammoId));
+			Plugin.Verbose($"Flea: tree rows {ViewCount(panel)}, filtered nodes {panel.FilteredNodes.Count}, rule item search '{ragfair.FilterRule.FilterSearchId}', handbook '{ragfair.FilterRule.HandbookId}'");
 		}
 
 		// The tree now stands for a search by the ammo's name: the name is in the search box, and the panel knows a filter is on, so clearing the box
@@ -103,141 +187,49 @@ namespace CustomRpTweaks.Client
 			type.GetField("_clearedAlready", BindingFlags.Instance | BindingFlags.NonPublic)?.SetValue(panel, false);
 		}
 
-		// The latest Show task of each panel; the game builds the tree inside it (see FleaTreeShowPatch)
-		internal static readonly Dictionary<RagfairCategoriesPanel, Task> ShowTasks = new Dictionary<RagfairCategoriesPanel, Task>();
+		// Waits until the game has no offers request in flight (starting a frame later, as a request begins a frame after what asked for it)
+		private static IEnumerator WaitIdle(RagFair ragfair)
+		{
+			yield return null;
+			for (var guard = 0f; guard < 10f && ragfair.GettingOffers; guard += Time.unscaledDeltaTime)
+			{
+				yield return null;
+			}
+		}
+
+		private static string Chips(RagFair ragfair) =>
+			string.Join(", ", ragfair.CancellableFilters.AllFilters.Select(chip => chip.Type.ToString()).ToArray());
 
 		// How many rows the tree shows (the game keeps them in a protected dictionary)
 		private static int ViewCount(BrowseCategoriesPanel panel)
 		{
 			var member = typeof(BrowseCategoriesPanel).GetProperty("ViewNodes", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)?.GetValue(panel)
 				?? typeof(BrowseCategoriesPanel).GetField("ViewNodes", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)?.GetValue(panel);
-			return member is System.Collections.ICollection collection ? collection.Count : 0;
-		}
-
-		private static IEnumerator FillTree(ItemUiContext uiContext, List<string> ids, string name, string selectId, int round = 0)
-		{
-			// The screen builds its own tree as it opens (its Show task completes when the rows are made); filling before that gets overwritten.
-			// So: wait for the Show task of the panel to complete. The long limit is only for a flea market that never opens.
-			RagfairCategoriesPanel panel = null;
-			Task shown = null;
-			var waited = 0f;
-			for (; waited < 20f; waited += Time.unscaledDeltaTime)
-			{
-				yield return null;
-				var found = UnityEngine.Object.FindObjectOfType<RagfairCategoriesPanel>();
-				if (found != null && found.isActiveAndEnabled && found.Nodes != null && found.FilteredNodes != null && ids.All(id => found.Nodes[id] != null)
-					&& ShowTasks.TryGetValue(found, out var task) && task.IsCompleted)
-				{
-					panel = found;
-					shown = task;
-					break;
-				}
-			}
-
-			if (panel == null)
-			{
-				Plugin.Log.LogWarning("Ammo box search: the flea market's tree didn't come up in time, nothing filled");
-				yield break;
-			}
-
-			Plugin.Verbose($"Flea: tree built after {waited:0.00} s ({ViewCount(panel)} rows), filling it with {ids.Count} items");
-
-			var ragfair = uiContext?.Session?.RagFair;
-			if (ragfair != null)
-			{
-				// Requests still on their way (the screen restores the last search as it opens) would land after ours and overwrite it: let them finish
-				// first. The game itself ignores clicks on the rows while this is on.
-				for (var guard = 0f; guard < 10f && ragfair.GettingOffers; guard += Time.unscaledDeltaTime)
-				{
-					yield return null;
-				}
-
-				// An item search from earlier (Filter by item, linked, barters) keeps the list and the tree narrowed to that item. Its chip is taken
-				// off without the game's callback, which would request the whole default category (a big, slow answer that can arrive after ours),
-				// and the rule is cleared of it by hand.
-				var cleared = false;
-				foreach (var type in new[] { EFilterType.FilterSearch, EFilterType.LinkedSearch, EFilterType.NeededSearch })
-				{
-					var chip = ragfair.CancellableFilters[type];
-					if (chip != null)
-					{
-						ragfair.RemoveCancellableFilter(chip, false);
-						cleared = true;
-					}
-				}
-
-				if (cleared)
-				{
-					var rule = ragfair.FilterRule;
-					rule.FilterSearchId = string.Empty;
-					rule.LinkedSearchId = string.Empty;
-					rule.NeededSearchId = string.Empty;
-					ragfair.FilterRule = rule;
-					yield return null;
-				}
-			}
-
-			panel.FilterHandler();
-			foreach (var id in ids)
-			{
-				panel.FilteredNodes.Add(id, panel.Nodes[id].CreateDummy(false));
-			}
-
-			ShowAsSearch(panel, name);
-
-			// The rows' views are made over the next frames; the screen can only highlight a row that has one, so wait for it
-			for (var frames = 0; frames < 180 && panel != null && panel.GetNode(selectId) == null; frames++)
-			{
-				yield return null;
-			}
-
-			yield return null;
-
-			// Pick the ammo the way a click on its row does: the screen's own handler makes the request, and when the answer arrives the screen
-			// deselects the row it had and highlights this one. (Highlighting the row directly would leave the screen not knowing about it.)
-			var offerList = UnityEngine.Object.FindObjectsOfType<OfferViewList>().FirstOrDefault(view => view.isActiveAndEnabled && view._browseCategoriesPanel == panel);
-			if (offerList == null)
-			{
-				Plugin.Log.LogWarning("Ammo box search: the flea market's offer list wasn't found, the tree is filled but nothing was picked");
-				yield break;
-			}
-
-			offerList.HandbookNodeIdChangedHandler(selectId, true);
-			Plugin.Verbose($"Flea: asked for the offers of {selectId}");
-
-			// The screen may rebuild its tree once more after our fill (a second Show); then ours is gone and gets made again
-			yield return null;
-			if (panel != null && ShowTasks.TryGetValue(panel, out var latest) && latest != shown && round < 2)
-			{
-				Plugin.Verbose("Flea: the screen rebuilt its tree after the fill, filling again");
-				yield return FillTree(uiContext, ids, name, selectId, round + 1);
-			}
+			return member is ICollection collection ? collection.Count : 0;
 		}
 	}
 
-	// The game's Filter by item action
+	// The game's Filter by item action: it runs as it is, and the boxes are added after it
 	internal class FleaAmmoBoxTreePatch : ModulePatch
 	{
 		protected override MethodBase GetTargetMethod() => typeof(BaseItemContextInteractions).GetMethod("method_41", BindingFlags.Instance | BindingFlags.Public);
 
-		[PatchPrefix]
-		private static bool Prefix(BaseItemContextInteractions __instance)
+		[PatchPostfix]
+		private static void Postfix(BaseItemContextInteractions __instance)
 		{
 			try
 			{
-				return !FleaAmmoBoxSearch.TreeSearch(__instance);
+				FleaAmmoBoxSearch.AfterFilter(__instance);
 			}
 			catch (Exception e)
 			{
-				// Never break the game's own search
-				Plugin.Log.LogError($"Ammo box search failed, using the game's search: {e}");
-				return true;
+				Plugin.Log.LogError($"Ammo box search failed: {e}");
 			}
 		}
 	}
 
 	// RagfairCategoriesPanel.Show is an async method: its Task completes once the tree's rows are made. The task is kept per panel, so the
-	// fill above waits for the game's own "tree built" instead of a timer.
+	// code above waits for the game's own "tree built" instead of a timer.
 	internal class FleaTreeShowPatch : ModulePatch
 	{
 		protected override MethodBase GetTargetMethod() =>
