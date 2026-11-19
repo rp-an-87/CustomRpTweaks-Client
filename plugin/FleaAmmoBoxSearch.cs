@@ -173,6 +173,14 @@ namespace CustomRpTweaks.Client
 				yield break;
 			}
 
+			// While the chip was on, the game counted the tree's items from the offers it had (the ammo's alone), so the boxes count as 0 and their rows
+			// stay hidden. Ask the way the refresh button does: the answer carries the real counts of every item.
+			ragfair.ClearCachedInfo();
+			offerList.GetOffers(RagFair.ESetFilterSource.FilterWindow, true, true);
+			yield return null;
+			yield return null;
+			yield return WaitIdle(ragfair);
+
 			offerList.HandleNodeSelection(new OffersData(RagFair.EUpdatePagesStatus.DoNotUpdate, ammoId));
 			Plugin.Verbose($"Flea: tree rows {ViewCount(panel)}, filtered nodes {panel.FilteredNodes.Count}, rule item search '{ragfair.FilterRule.FilterSearchId}', handbook '{ragfair.FilterRule.HandbookId}'");
 		}
