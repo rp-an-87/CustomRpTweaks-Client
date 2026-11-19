@@ -445,7 +445,8 @@ namespace CustomRpTweaks.Client
 
 			foreach (var need in plan.Needs)
 			{
-				if (need.CannotBuy && src.UnbuyableBlocks)
+				// Found-in-raid items, money and dog tags: not something that is bought, so not listed here (a shortfall is said below)
+				if ((need.CannotBuy && src.UnbuyableBlocks) || src.NeedsFir(need.Requirement) || CurrencyUtil.IsCurrencyId(need.Requirement.TemplateId) || need.Requirement.Item.GetItemComponent<DogtagComponent>() != null)
 				{
 					continue;
 				}
