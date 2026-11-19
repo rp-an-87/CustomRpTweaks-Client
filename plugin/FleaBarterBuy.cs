@@ -191,7 +191,8 @@ namespace CustomRpTweaks.Client
 			});
 		}
 
-		private static string NameOf(Item item) => item == null ? "?" : item.ShortName.Localized(null);
+		// Some short names in the game's locale start with a "#" (#FireKlean): not shown
+		private static string NameOf(Item item) => item == null ? "?" : item.ShortName.Localized(null).TrimStart('#');
 
 		// Called when the game makes the interactions of an item: a flea market barter gets our entries
 		internal static void Add(ItemContext itemContext, ContextInteractions<EItemInfoButton> interactions)
@@ -436,6 +437,12 @@ namespace CustomRpTweaks.Client
 			// What you hold of each requirement, counted the way the mode counts (found-in-raid items or not): it says why something is bought,
 			// or isn't. Green when what you hold covers it.
 			var have = new List<string>();
+			// What is left to you (the buy goes ahead): said first, in red
+			if (!src.UnbuyableBlocks && plan.Needs.Any(need => need.CannotBuy))
+			{
+				yield return $"<b><color={Red}>Buying this still won't meet all the requirements</color></b>";
+			}
+
 			foreach (var need in plan.Needs)
 			{
 				if (need.CannotBuy && src.UnbuyableBlocks)
@@ -474,7 +481,9 @@ namespace CustomRpTweaks.Client
 			{
 				foreach (var need in plan.Needs.Where(need => need.CannotBuy))
 				{
-					yield return Note($"{need.Name} can't be bought on the flea market, you have {need.Held} of {need.Required}.");
+					yield return src.NeedsFir(need.Requirement)
+						? Note($"{need.Name} has to be found in raid, you have {need.Held} of {need.Required}.")
+						: Note($"{need.Name} can't be bought on the flea market, you have {need.Held} of {need.Required}.");
 				}
 			}
 		}
