@@ -150,6 +150,14 @@ namespace CustomRpTweaks.Client
 
 			ShowAsSearch(panel, name);
 
+			// The rows' views are made over the next frames; the screen can only highlight a row that has one, so wait for it
+			for (var frames = 0; frames < 180 && panel != null && panel.GetNode(selectId) == null; frames++)
+			{
+				yield return null;
+			}
+
+			yield return null;
+
 			// Pick the ammo the way a click on its row does: the screen's own handler makes the request, and when the answer arrives the screen
 			// deselects the row it had and highlights this one. (Highlighting the row directly would leave the screen not knowing about it.)
 			var offerList = UnityEngine.Object.FindObjectsOfType<OfferViewList>().FirstOrDefault(view => view.isActiveAndEnabled
