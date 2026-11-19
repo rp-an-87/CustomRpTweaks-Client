@@ -138,7 +138,33 @@ namespace CustomRpTweaks.Client
 				yield return null;
 			}
 
-			// 3. The ammo and its boxes into the tree, the name into the box. If the screen rebuilds its tree after that (a second Show), do it again.
+			// Highlight the ammo's row the way the screen does it itself
+			var offerList = UnityEngine.Object.FindObjectsOfType<OfferViewList>().FirstOrDefault(view => view.isActiveAndEnabled && view._browseCategoriesPanel == panel);
+			if (offerList == null)
+			{
+				Plugin.Log.LogWarning("Ammo box search: the flea market's offer list wasn't found, the tree is filled but the row was not highlighted");
+				yield break;
+			}
+
+			// While the chip was on, the game counted the tree's items from the offers it had (the ammo's alone), so the boxes count as 0 and their rows
+			// stay hidden. Ask the way the refresh button does: the answer carries the real counts of every item.
+			Plugin.Verbose($"Flea: counts before the refresh: {Counts(panel, ids)}");
+			ragfair.ClearCachedInfo();
+			offerList.GetOffers(RagFair.ESetFilterSource.FilterWindow, true, true);
+			yield return null;
+			yield return null;
+			yield return WaitIdle(ragfair);
+			// The answer sets the counts; a row with none stays hidden. Wait until a box has one (the limit is for a box nobody sells at the moment)
+			var boxIds = ids.Where(id => id != ammoId).ToList();
+			for (var guard = 0f; guard < 6f && !boxIds.Any(id => panel.Nodes[id].Count > 0); guard += Time.unscaledDeltaTime)
+			{
+				yield return null;
+			}
+
+			Plugin.Verbose($"Flea: counts after the refresh: {Counts(panel, ids)}, getting offers: {ragfair.GettingOffers}");
+
+			// The ammo and its boxes into the tree, the name into the box. Built now, after the counts are in: a row copies its item's count when it is made,
+			// so rows made earlier would stay at 0 and hidden. If the screen rebuilds its tree after that (a second Show), do it again.
 			for (var round = 0; round < 3 && panel != null; round++)
 			{
 				var shown = ShowTasks[panel];
@@ -165,22 +191,6 @@ namespace CustomRpTweaks.Client
 				Plugin.Verbose("Flea: the screen rebuilt its tree after the fill, filling again");
 			}
 
-			// 4. Highlight the ammo's row the way the screen does it itself
-			var offerList = UnityEngine.Object.FindObjectsOfType<OfferViewList>().FirstOrDefault(view => view.isActiveAndEnabled && view._browseCategoriesPanel == panel);
-			if (offerList == null)
-			{
-				Plugin.Log.LogWarning("Ammo box search: the flea market's offer list wasn't found, the tree is filled but the row was not highlighted");
-				yield break;
-			}
-
-			// While the chip was on, the game counted the tree's items from the offers it had (the ammo's alone), so the boxes count as 0 and their rows
-			// stay hidden. Ask the way the refresh button does: the answer carries the real counts of every item.
-			ragfair.ClearCachedInfo();
-			offerList.GetOffers(RagFair.ESetFilterSource.FilterWindow, true, true);
-			yield return null;
-			yield return null;
-			yield return WaitIdle(ragfair);
-
 			offerList.HandleNodeSelection(new OffersData(RagFair.EUpdatePagesStatus.DoNotUpdate, ammoId));
 			Plugin.Verbose($"Flea: tree rows {ViewCount(panel)}, filtered nodes {panel.FilteredNodes.Count}, rule item search '{ragfair.FilterRule.FilterSearchId}', handbook '{ragfair.FilterRule.HandbookId}'");
 		}
@@ -204,6 +214,9 @@ namespace CustomRpTweaks.Client
 				yield return null;
 			}
 		}
+
+		private static string Counts(RagfairCategoriesPanel panel, List<string> ids) =>
+			string.Join(", ", ids.Select(id => $"{id.Substring(0, 6)}: node {panel.Nodes[id].Count}, row {(panel.FilteredNodes.ContainsKey(id) ? panel.FilteredNodes[id].Count.ToString() : "-")}").ToArray());
 
 		private static string Chips(RagFair ragfair) =>
 			string.Join(", ", ragfair.CancellableFilters.AllFilters.Select(chip => chip.Type.ToString()).ToArray());
