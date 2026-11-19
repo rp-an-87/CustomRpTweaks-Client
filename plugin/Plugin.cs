@@ -73,6 +73,8 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<bool> QuickBuyTraders;
 		internal static ConfigEntry<bool> TaskSearchBox;
 		internal static ConfigEntry<bool> BtrCannonCam;
+		internal static ConfigEntry<bool> TagillaFeelsAI;
+		internal static ConfigEntry<bool> BtrNotEnemyOfPmcs;
 		internal static ConfigEntry<float> BtrCannonCamDistance;
 		internal static ConfigEntry<float> BtrCannonCamHeight;
 		internal static ConfigEntry<float> BtrCannonCamSmoothing;
@@ -332,6 +334,13 @@ namespace CustomRpTweaks.Client
 			BtrCannonCamFirstPersonInScreens = Config.Bind("22. BTR", "6. First person while a screen is open", true,
 				"While the BTR drives you, the camera goes back to your normal first-person view when you open your inventory or talk to the driver (or any other full screen is open), and returns to the cannon view when you close it. Changes apply live.");
 			new BtrCannonCamPatch().Enable();
+
+			BtrNotEnemyOfPmcs = Config.Bind("25. Bot hostility", "1. BTR is not an enemy of PMC bots", true,
+				"Vanilla makes every newly spawned bot an enemy of all groups of another side without checking the friendly lists, so PMC bots attack the BTR even though the server lists it as friendly. On = the BTR is skipped there when the group's friendly list says so (a PMC it really shoots can still turn on it). Off = vanilla. Applies to bots spawned after the change.");
+			new BtrNotEnemyOfGroupsPatch().Enable();
+			TagillaFeelsAI = Config.Bind("25. Bot hostility", "2. Tagilla notices AI PMCs", true,
+				"Vanilla: while Tagilla waits in ambush he picks the nearest non-scav enemy, but only real players count, so an AI PMC shooting him is never chosen and he keeps running at the player. On = AI PMCs count too (scavs still never do). Off = vanilla. Changes apply live.");
+			new TagillaFeelIncludesAIPatch().Enable();
 
 
 			TaskSearchBox = Config.Bind("04. Tasks screen", "1. Search box", true,
