@@ -68,6 +68,7 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<bool> SteadyAimHoldBreathFix;
 		internal static ConfigEntry<bool> FleaOfferTimerFix;
 		internal static ConfigEntry<bool> FleaAmmoBoxSearchEnabled;
+		internal static ConfigEntry<bool> FleaNoRefreshCooldown;
 		internal static ConfigEntry<bool> FleaBarterBuyMenu;
 		internal static ConfigEntry<QuickBuyMode> FleaBarterBuyMode;
 		internal static ConfigEntry<bool> FleaBarterBuyComplete;
@@ -325,6 +326,9 @@ namespace CustomRpTweaks.Client
 				"The quick buy (barter button, menu entry and the hideout craft buy button) also buys from the traders' offers on the flea market, not only from other players, whichever is cheapest. Ammo, for one, is mostly sold by traders. A trader's offer is only used if you could press Purchase on it yourself: the trader is unlocked, your loyalty level is high enough and you have not used up your buy limit. Off: other players' offers only.");
 			FleaAmmoBoxSearchEnabled = Config.Bind("01. Flea market", "7. Filter by item on ammo lists its boxes", true,
 				"Ammo can't be bought on the flea market, its boxes can. With this on, Filter by item (menu entry, and the Filter by Item key of UI Fixes) on an ammo item that has boxes on sale works as the game does it, then the left list of the flea market is changed to the ammo and each of its boxes as rows (the ammo highlighted, its name in the search box: clear the box for the normal tree); clicking a row shows that item's offers. Off, or for ammo without a box on sale: the game's own search.");
+			FleaNoRefreshCooldown = Config.Bind("01. Flea market", "9. No refresh cooldown", true,
+				"The flea market's refresh button and F5 are blocked for 3 seconds after each refresh, a guard against hammering the live servers that means nothing in single player. With this on there is no wait.");
+			new FleaRefreshPatch().Enable();
 			// A failing patch here must not stop the rest of the plugin from loading
 			try
 			{
