@@ -146,7 +146,9 @@ namespace CustomRpTweaks.Client
 
 	internal class FleaAmmoBoxRequestPatch : ModulePatch
 	{
-		protected override MethodBase GetTargetMethod() => typeof(EftClientBackendSession).GetMethod(nameof(EftClientBackendSession.GetOffers), BindingFlags.Instance | BindingFlags.Public);
+		protected override MethodBase GetTargetMethod() => typeof(EftClientBackendSession).GetMethod(nameof(EftClientBackendSession.GetOffers), BindingFlags.Instance | BindingFlags.Public, null,
+			new[] { typeof(int), typeof(int), typeof(int), typeof(bool), typeof(int), typeof(int), typeof(int), typeof(int), typeof(int), typeof(int), typeof(int), typeof(bool), typeof(bool), typeof(int), typeof(bool),
+				typeof(string), typeof(string), typeof(string), typeof(Dictionary<string, int>), typeof(int), typeof(bool) }, null);
 
 		[PatchPrefix]
 		private static bool Prefix(EftClientBackendSession __instance, ref Task<Result<OffersList>> __result, int page, int limit, int sortType, bool direction, int currency, int priceFrom, int priceTo,
