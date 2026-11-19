@@ -68,7 +68,6 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<bool> SteadyAimHoldBreathFix;
 		internal static ConfigEntry<bool> FleaOfferTimerFix;
 		internal static ConfigEntry<bool> FleaAmmoBoxSearchEnabled;
-		internal static ConfigEntry<FleaAmmoBoxMode> FleaAmmoBoxMode;
 		internal static ConfigEntry<bool> FleaBarterBuyMenu;
 		internal static ConfigEntry<QuickBuyMode> FleaBarterBuyMode;
 		internal static ConfigEntry<bool> FleaBarterBuyComplete;
@@ -324,15 +323,11 @@ namespace CustomRpTweaks.Client
 				"A small Buy & fulfil button under the price of a flea market barter offer, the same as the menu entry. Hover it: the tooltip shows what it would buy and cost from the current offers, and whether you hold the money. Takes effect the next time the offers are drawn.");
 			QuickBuyTraders = Config.Bind("01. Flea market", "6. Quick buy also uses trader offers", true,
 				"The quick buy (barter button, menu entry and the hideout craft buy button) also buys from the traders' offers on the flea market, not only from other players, whichever is cheapest. Ammo, for one, is mostly sold by traders. A trader's offer is only used if you could press Purchase on it yourself: the trader is unlocked, your loyalty level is high enough and you have not used up your buy limit. Off: other players' offers only.");
-			FleaAmmoBoxSearchEnabled = Config.Bind("01. Flea market", "7. Filter by item on ammo searches its boxes", true,
-				"Ammo can't be bought on the flea market, its boxes can. With this on, Filter by item (menu entry, and the Filter by Item key of UI Fixes) on an ammo item that has boxes on sale lists the ammo and all its boxes together in the normal flea market list. Ammo without a box on sale, and every other item, search as before.");
-			FleaAmmoBoxMode = Config.Bind("01. Flea market", "8. Ammo box search: how the list is shown", global::CustomRpTweaks.Client.FleaAmmoBoxMode.Tree,
-				"Tree: the left side of the flea market lists the ammo and each of its boxes as rows, the first box is selected, and clicking a row shows that item's offers (the game's own search, with its paging and sorting). Together: the normal Filter by item list, with the offers of the ammo and all its boxes in one list.");
+			FleaAmmoBoxSearchEnabled = Config.Bind("01. Flea market", "7. Filter by item on ammo lists its boxes", true,
+				"Ammo can't be bought on the flea market, its boxes can. With this on, Filter by item (menu entry, and the Filter by Item key of UI Fixes) on an ammo item that has boxes on sale opens the flea market with the ammo and each of its boxes as rows in the left list, the first box selected; clicking a row shows that item's offers. Off, or for ammo without a box on sale: the game's own search.");
 			// A failing patch here must not stop the rest of the plugin from loading
 			try
 			{
-				new FleaAmmoBoxRequestPatch().Enable();
-				new FleaAmmoBoxAcceptPatch().Enable();
 				new FleaAmmoBoxTreePatch().Enable();
 			}
 			catch (System.Exception e)
