@@ -328,7 +328,14 @@ namespace CustomRpTweaks.Client
 				"Ammo can't be bought on the flea market, its boxes can. With this on, Filter by item (menu entry, and the Filter by Item key of UI Fixes) on an ammo item that has boxes on sale works as the game does it, then the left list of the flea market is changed to the ammo and each of its boxes as rows (the ammo highlighted, its name in the search box: clear the box for the normal tree); clicking a row shows that item's offers. Off, or for ammo without a box on sale: the game's own search.");
 			FleaNoRefreshCooldown = Config.Bind("01. Flea market", "9. No refresh cooldown", true,
 				"The flea market's refresh button and F5 are blocked for 3 seconds after each refresh, a guard against hammering the live servers that means nothing in single player. With this on there is no wait.");
-			new FleaRefreshPatch().Enable();
+			try
+			{
+				new FleaRefreshPatch().Enable();
+			}
+			catch (System.Exception e)
+			{
+				Log.LogError($"Flea refresh patch failed, the cooldown stays: {e.Message}");
+			}
 			// A failing patch here must not stop the rest of the plugin from loading
 			try
 			{

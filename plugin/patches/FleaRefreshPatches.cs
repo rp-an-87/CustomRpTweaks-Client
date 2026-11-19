@@ -11,15 +11,15 @@ namespace CustomRpTweaks.Client.Patches
 		protected override MethodBase GetTargetMethod() => typeof(OfferViewList).GetMethod(nameof(OfferViewList.RefreshButtonPressedHandler), BindingFlags.Instance | BindingFlags.Public);
 
 		[PatchPostfix]
-		private static void Postfix(OfferViewList __instance, ref bool ___canRefresh, ref float ___timer)
+		private static void Postfix(OfferViewList __instance, ref bool ____canRefresh, ref float ____timer)
 		{
 			if (!Plugin.FleaNoRefreshCooldown.Value)
 			{
 				return;
 			}
 
-			___canRefresh = true;
-			___timer = 0f;
+			____canRefresh = true;
+			____timer = 0f;
 			if (__instance._refreshButton != null)
 			{
 				__instance._refreshButton.interactable = true;
