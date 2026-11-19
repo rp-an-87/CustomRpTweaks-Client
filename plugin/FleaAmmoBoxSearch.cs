@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Threading.Tasks;
 using Comfort.Common;
 using EFT;
 using EFT.InventoryLogic;
@@ -96,6 +97,9 @@ namespace CustomRpTweaks.Client
 			type.GetField("_clearedAlready", BindingFlags.Instance | BindingFlags.NonPublic)?.SetValue(panel, false);
 		}
 
+		// The latest Show task of each panel; the game builds the tree inside it (see FleaTreeShowPatch)
+		internal static readonly Dictionary<RagfairCategoriesPanel, Task> ShowTasks = new Dictionary<RagfairCategoriesPanel, Task>();
+
 		// How many rows the tree shows (the game keeps them in a protected dictionary)
 		private static int ViewCount(BrowseCategoriesPanel panel)
 		{
@@ -104,23 +108,22 @@ namespace CustomRpTweaks.Client
 			return member is System.Collections.ICollection collection ? collection.Count : 0;
 		}
 
-		private static IEnumerator FillTree(ItemUiContext uiContext, List<string> ids, string name, string selectId)
+		private static IEnumerator FillTree(ItemUiContext uiContext, List<string> ids, string name, string selectId, int round = 0)
 		{
-			// The screen builds its own tree as it opens; filling before that is done gets overwritten (or wipes it). Wait until the tree has rows
-			// and has stayed that way for a moment.
+			// The screen builds its own tree as it opens (its Show task completes when the rows are made); filling before that gets overwritten.
+			// So: wait for the Show task of the panel to complete. The long limit is only for a flea market that never opens.
 			RagfairCategoriesPanel panel = null;
-			var settled = 0f;
+			Task shown = null;
 			var waited = 0f;
-			for (; waited < 10f; waited += Time.unscaledDeltaTime)
+			for (; waited < 20f; waited += Time.unscaledDeltaTime)
 			{
 				yield return null;
 				var found = UnityEngine.Object.FindObjectOfType<RagfairCategoriesPanel>();
-				var ready = found != null && found.isActiveAndEnabled && found.Nodes != null && found.FilteredNodes != null && ViewCount(found) > 0
-					&& ids.All(id => found.Nodes[id] != null);
-				settled = ready ? settled + Time.unscaledDeltaTime : 0f;
-				if (ready && settled > 0.5f)
+				if (found != null && found.isActiveAndEnabled && found.Nodes != null && found.FilteredNodes != null && ids.All(id => found.Nodes[id] != null)
+					&& ShowTasks.TryGetValue(found, out var task) && task.IsCompleted)
 				{
 					panel = found;
+					shown = task;
 					break;
 				}
 			}
@@ -131,7 +134,7 @@ namespace CustomRpTweaks.Client
 				yield break;
 			}
 
-			Plugin.Verbose($"Flea: tree ready after {waited:0.0} s ({ViewCount(panel)} rows), filling it with {ids.Count} items");
+			Plugin.Verbose($"Flea: tree built after {waited:0.00} s ({ViewCount(panel)} rows), filling it with {ids.Count} items");
 
 			// A Filter by item chip from an earlier search would narrow the list to that one item
 			var ragfair = uiContext?.Session?.RagFair;
@@ -139,7 +142,7 @@ namespace CustomRpTweaks.Client
 			if (chip != null)
 			{
 				ragfair.RemoveCancellableFilter(chip, true);
-				yield return new WaitForSecondsRealtime(0.3f);
+				yield return null;
 			}
 
 			panel.FilterHandler();
@@ -169,6 +172,14 @@ namespace CustomRpTweaks.Client
 
 			offerList.HandbookNodeIdChangedHandler(selectId, true);
 			Plugin.Verbose($"Flea: asked for the offers of {selectId}");
+
+			// The screen may rebuild its tree once more after our fill (a second Show); then ours is gone and gets made again
+			yield return null;
+			if (panel != null && ShowTasks.TryGetValue(panel, out var latest) && latest != shown && round < 2)
+			{
+				Plugin.Verbose("Flea: the screen rebuilt its tree after the fill, filling again");
+				yield return FillTree(uiContext, ids, name, selectId, round + 1);
+			}
 		}
 	}
 
@@ -189,6 +200,23 @@ namespace CustomRpTweaks.Client
 				// Never break the game's own search
 				Plugin.Log.LogError($"Ammo box search failed, using the game's search: {e}");
 				return true;
+			}
+		}
+	}
+
+	// RagfairCategoriesPanel.Show is an async method: its Task completes once the tree's rows are made. The task is kept per panel, so the
+	// fill above waits for the game's own "tree built" instead of a timer.
+	internal class FleaTreeShowPatch : ModulePatch
+	{
+		protected override MethodBase GetTargetMethod() =>
+			typeof(RagfairCategoriesPanel).GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly).First(method => method.Name == "Show");
+
+		[PatchPostfix]
+		private static void Postfix(RagfairCategoriesPanel __instance, Task __result)
+		{
+			if (__instance != null && __result != null)
+			{
+				FleaAmmoBoxSearch.ShowTasks[__instance] = __result;
 			}
 		}
 	}

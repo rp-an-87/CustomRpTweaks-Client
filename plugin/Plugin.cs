@@ -329,6 +329,7 @@ namespace CustomRpTweaks.Client
 			try
 			{
 				new FleaAmmoBoxTreePatch().Enable();
+				new FleaTreeShowPatch().Enable();
 			}
 			catch (System.Exception e)
 			{
