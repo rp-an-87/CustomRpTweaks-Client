@@ -61,58 +61,70 @@ namespace CustomRpTweaks.Client
 			return map;
 		}
 
-		// Ammo with a box on sale: the game's own search opens the flea market (that is its way there from any screen), then the item chip is
-		// taken off and the ammo's name goes into the flea market's own search box. Its list then shows the ammo and every box of it side by side.
-		internal static bool ShouldReplace(BaseItemContextInteractions interactions)
+		// Ammo with a box on sale: no item search at all. The game opens the flea market for any search; the harmless one used here switches off the
+	// one-hour-expiration filter (which is off unless the owner turned it on), so nothing narrows the list. Then the ammo's name goes into the
+	// flea market's own search box, and its tree lists the ammo and every box of it.
+	internal static bool ShouldReplace(BaseItemContextInteractions interactions)
+	{
+		var item = interactions.Item;
+		if (!Plugin.FleaAmmoBoxSearchEnabled.Value || !(item is Ammo))
 		{
-			var item = interactions.Item;
-			if (!Plugin.FleaAmmoBoxSearchEnabled.Value || !(item is Ammo))
-			{
-				return false;
-			}
-
-			var boxes = BoxesFor(item.TemplateId.ToString());
-			if (boxes == null || boxes.Count == 0)
-			{
-				return false;
-			}
-
-			var name = (item.TemplateId.ToString() + " Name").Localized();
-			Plugin.Verbose($"Flea: {name} searched by name, {boxes.Count} box(es) on sale");
-			Plugin.Instance.StartCoroutine(TypeName(interactions.UIContext, name));
-			return true;
+			return false;
 		}
 
-		private static IEnumerator TypeName(ItemUiContext uiContext, string name)
+		var boxes = BoxesFor(item.TemplateId.ToString());
+		if (boxes == null || boxes.Count == 0)
 		{
-			// The search opens the screen over a few frames: wait for its box and for the item chip
-			RagFair ragfair = null;
-			RagfairCategoriesPanel panel = null;
-			for (var waited = 0f; waited < 6f; waited += Time.unscaledDeltaTime)
-			{
-				yield return null;
-				ragfair = uiContext?.Session?.RagFair;
-				panel = UnityEngine.Object.FindObjectOfType<RagfairCategoriesPanel>();
-				if (ragfair != null && panel != null && panel.isActiveAndEnabled && ragfair.CancellableFilters[EFilterType.FilterSearch] != null)
-				{
-					break;
-				}
+			return false;
+		}
 
-				panel = null;
+		var name = (item.TemplateId.ToString() + " Name").Localized();
+		Plugin.Verbose($"Flea: {name} searched by name, {boxes.Count} box(es) on sale");
+		interactions.Search(new RagfairSearch(EFilterType.OneHourExpiration, 0, false));
+		Plugin.Instance.StartCoroutine(TypeName(name));
+		return true;
+	}
+
+	private static IEnumerator TypeName(string name)
+	{
+		// The screen opens over a few frames and may clear its box while it does: wait for it, then type, and type again if it was cleared
+		RagfairCategoriesPanel panel = null;
+		for (var waited = 0f; waited < 6f; waited += Time.unscaledDeltaTime)
+		{
+			yield return null;
+			panel = UnityEngine.Object.FindObjectOfType<RagfairCategoriesPanel>();
+			if (panel != null && panel.isActiveAndEnabled && panel.SearchInputField != null)
+			{
+				break;
 			}
 
-			if (panel == null)
-			{
-				Plugin.Log.LogWarning("Ammo box search: the flea market didn't open in time, left on the game's own search");
-				yield break;
-			}
+			panel = null;
+		}
 
-			// What the X on the chip does
-			ragfair.RemoveCancellableFilter(ragfair.CancellableFilters[EFilterType.FilterSearch], true);
-			yield return new WaitForSecondsRealtime(0.3f);
-			panel.SearchInputField.text = name;
+		if (panel == null)
+		{
+			Plugin.Log.LogWarning("Ammo box search: the flea market didn't open in time, nothing typed");
+			yield break;
+		}
+
+		// A Filter by item chip from an earlier search would keep narrowing the list to that one item: off it goes, as the X on it does
+		var ragfair = ItemUiContext.Instance?.Session?.RagFair;
+		var chip = ragfair?.CancellableFilters[EFilterType.FilterSearch];
+		if (chip != null)
+		{
+			ragfair.RemoveCancellableFilter(chip, true);
+		}
+
+		for (var i = 0; i < 4 && panel != null; i++)
+		{
+			yield return new WaitForSecondsRealtime(0.4f);
+			if (panel != null && panel.SearchInputField != null && panel.SearchInputField.text != name)
+			{
+				panel.SearchInputField.text = name;
+			}
 		}
 	}
+}
 
 	internal class FleaAmmoBoxSearchPatch : ModulePatch
 	{
@@ -123,9 +135,7 @@ namespace CustomRpTweaks.Client
 		{
 			try
 			{
-				// The game's search still runs: it opens the flea market
-				FleaAmmoBoxSearch.ShouldReplace(__instance);
-				return true;
+				return !FleaAmmoBoxSearch.ShouldReplace(__instance);
 			}
 			catch (Exception e)
 			{
