@@ -82,11 +82,21 @@ namespace CustomRpTweaks.Client
 			Plugin.Verbose($"Flea: {item.ShortName.Localized()} listed with {boxes.Count} box(es) in the tree");
 			// Any search opens the flea market; this one only switches off the one-hour-expiration filter, which is off unless turned on
 			interactions.Search(new RagfairSearch(EFilterType.OneHourExpiration, 0, false));
-			Plugin.Instance.StartCoroutine(FillTree(interactions.UIContext, ids));
+			Plugin.Instance.StartCoroutine(FillTree(interactions.UIContext, ids, (item.TemplateId.ToString() + " Name").Localized()));
 			return true;
 		}
 
-		private static IEnumerator FillTree(ItemUiContext uiContext, List<string> ids)
+		// The tree now stands for a search by the ammo's name: the name is in the search box, and the panel knows a filter is on, so clearing the box
+		// (or typing something else) brings back the full tree the way it does after any search
+		private static void ShowAsSearch(RagfairCategoriesPanel panel, string name)
+		{
+			panel.SearchInputField.SetTextWithoutNotify(name);
+			var type = typeof(BrowseCategoriesPanel);
+			type.GetField("_previousFilter", BindingFlags.Instance | BindingFlags.NonPublic)?.SetValue(panel, name);
+			type.GetField("_clearedAlready", BindingFlags.Instance | BindingFlags.NonPublic)?.SetValue(panel, false);
+		}
+
+		private static IEnumerator FillTree(ItemUiContext uiContext, List<string> ids, string name)
 		{
 			RagfairCategoriesPanel panel = null;
 			for (var waited = 0f; waited < 8f; waited += Time.unscaledDeltaTime)
@@ -128,6 +138,7 @@ namespace CustomRpTweaks.Client
 					}
 
 					selected = false;
+					ShowAsSearch(panel, name);
 				}
 
 				yield return new WaitForSecondsRealtime(0.15f);
