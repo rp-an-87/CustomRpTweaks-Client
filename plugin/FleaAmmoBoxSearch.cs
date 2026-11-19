@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -8,13 +9,13 @@ using EFT.InventoryLogic;
 using EFT.UI;
 using EFT.UI.Ragfair;
 using SPT.Reflection.Patching;
+using UnityEngine;
 
 namespace CustomRpTweaks.Client
 {
 	// Ammo can't be bought on the flea market, its boxes can. "Filter by item" (the menu entry, and the hotkey of UI Fixes, which runs the same
-	// game action) on an ammo item with boxes on sale searches those boxes instead. Anything else, and ammo without a box on sale, keeps the
-	// game's own search. The game's plain filter takes one template; the search the builds use takes a list, so that one carries the ammo (always
-	// listed, greyed out when nothing sells it, which is the usual case) and its boxes.
+	// game action) on an ammo item with boxes on sale turns into a search by the ammo's name in the flea market's own search box, so the list
+	// shows the ammo and its boxes together. Anything else, and ammo without a box on sale, keeps the game's own search.
 	internal static class FleaAmmoBoxSearch
 	{
 		// Ammo template id -> the boxes that hold it and can be listed on the flea market; built once, the templates don't change in a session
@@ -60,8 +61,9 @@ namespace CustomRpTweaks.Client
 			return map;
 		}
 
-		// True when the search was started here (the game's own must not run)
-		internal static bool TrySearch(BaseItemContextInteractions interactions)
+		// Ammo with a box on sale: the game's own search opens the flea market (that is its way there from any screen), then the item chip is
+		// taken off and the ammo's name goes into the flea market's own search box. Its list then shows the ammo and every box of it side by side.
+		internal static bool ShouldReplace(BaseItemContextInteractions interactions)
 		{
 			var item = interactions.Item;
 			if (!Plugin.FleaAmmoBoxSearchEnabled.Value || !(item is Ammo))
@@ -75,15 +77,40 @@ namespace CustomRpTweaks.Client
 				return false;
 			}
 
-			var value = new BuildItemSearchValue
-			{
-				BuildName = item.ShortName.Localized() + " boxes",
-				BuildCount = 1,
-				BuildItems = new[] { item.TemplateId.ToString() }.Concat(boxes).ToDictionary(id => id, id => 1)
-			};
-			Plugin.Verbose($"Flea: {item.ShortName.Localized()} searched as itself and {boxes.Count} box(es)");
-			interactions.Search(new RagfairSearch(EFilterType.BuildItems, value, true));
+			var name = (item.TemplateId.ToString() + " Name").Localized();
+			Plugin.Verbose($"Flea: {name} searched by name, {boxes.Count} box(es) on sale");
+			Plugin.Instance.StartCoroutine(TypeName(interactions.UIContext, name));
 			return true;
+		}
+
+		private static IEnumerator TypeName(ItemUiContext uiContext, string name)
+		{
+			// The search opens the screen over a few frames: wait for its box and for the item chip
+			RagFair ragfair = null;
+			RagfairCategoriesPanel panel = null;
+			for (var waited = 0f; waited < 6f; waited += Time.unscaledDeltaTime)
+			{
+				yield return null;
+				ragfair = uiContext?.Session?.RagFair;
+				panel = UnityEngine.Object.FindObjectOfType<RagfairCategoriesPanel>();
+				if (ragfair != null && panel != null && panel.isActiveAndEnabled && ragfair.CancellableFilters[EFilterType.FilterSearch] != null)
+				{
+					break;
+				}
+
+				panel = null;
+			}
+
+			if (panel == null)
+			{
+				Plugin.Log.LogWarning("Ammo box search: the flea market didn't open in time, left on the game's own search");
+				yield break;
+			}
+
+			// What the X on the chip does
+			ragfair.RemoveCancellableFilter(ragfair.CancellableFilters[EFilterType.FilterSearch], true);
+			yield return new WaitForSecondsRealtime(0.3f);
+			panel.SearchInputField.text = name;
 		}
 	}
 
@@ -96,7 +123,9 @@ namespace CustomRpTweaks.Client
 		{
 			try
 			{
-				return !FleaAmmoBoxSearch.TrySearch(__instance);
+				// The game's search still runs: it opens the flea market
+				FleaAmmoBoxSearch.ShouldReplace(__instance);
+				return true;
 			}
 			catch (Exception e)
 			{
