@@ -1,25 +1,28 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Threading.Tasks;
 using Comfort.Common;
 using EFT;
 using EFT.InventoryLogic;
 using EFT.UI;
 using EFT.UI.Ragfair;
 using SPT.Reflection.Patching;
-using UnityEngine;
 
 namespace CustomRpTweaks.Client
 {
 	// Ammo can't be bought on the flea market, its boxes can. "Filter by item" (the menu entry, and the hotkey of UI Fixes, which runs the same
-	// game action) on an ammo item with boxes on sale turns into a search by the ammo's name in the flea market's own search box, so the list
-	// shows the ammo and its boxes together. Anything else, and ammo without a box on sale, keeps the game's own search.
+	// game action) on an ammo item that has boxes on sale lists the ammo and its boxes together, in the flea market's normal list: the game
+	// asks the server for one item per search, so the request is made once per item (the ammo and each box) and the answers are merged,
+	// sorted the way the list is sorted; and the game's check that an offer is the item searched for lets the boxes through. Nothing else changes.
 	internal static class FleaAmmoBoxSearch
 	{
 		// Ammo template id -> the boxes that hold it and can be listed on the flea market; built once, the templates don't change in a session
 		private static Dictionary<string, List<string>> _boxesOf;
+
+		// Set while the merge asks for one item, so that request passes the patch untouched
+		private static bool _inner;
 
 		internal static List<string> BoxesFor(string ammoId)
 		{
@@ -61,87 +64,154 @@ namespace CustomRpTweaks.Client
 			return map;
 		}
 
-		// Ammo with a box on sale: no item search at all. The game opens the flea market for any search; the harmless one used here switches off the
-	// one-hour-expiration filter (which is off unless the owner turned it on), so nothing narrows the list. Then the ammo's name goes into the
-	// flea market's own search box, and its tree lists the ammo and every box of it.
-	internal static bool ShouldReplace(BaseItemContextInteractions interactions)
-	{
-		var item = interactions.Item;
-		if (!Plugin.FleaAmmoBoxSearchEnabled.Value || !(item is Ammo))
+		// The items whose offers belong in the list of this request: the ammo and its boxes; null when the request is not a Filter by item on such ammo
+		internal static List<string> ItemsOf(RagFair ragfair, string handbookId, string linkedSearchId, string neededSearchId, int buildCount)
 		{
-			return false;
-		}
-
-		var boxes = BoxesFor(item.TemplateId.ToString());
-		if (boxes == null || boxes.Count == 0)
-		{
-			return false;
-		}
-
-		var name = (item.TemplateId.ToString() + " Name").Localized();
-		Plugin.Verbose($"Flea: {name} searched by name, {boxes.Count} box(es) on sale");
-		interactions.Search(new RagfairSearch(EFilterType.OneHourExpiration, 0, false));
-		Plugin.Instance.StartCoroutine(TypeName(name));
-		return true;
-	}
-
-	private static IEnumerator TypeName(string name)
-	{
-		// The screen opens over a few frames and may clear its box while it does: wait for it, then type, and type again if it was cleared
-		RagfairCategoriesPanel panel = null;
-		for (var waited = 0f; waited < 6f; waited += Time.unscaledDeltaTime)
-		{
-			yield return null;
-			panel = UnityEngine.Object.FindObjectOfType<RagfairCategoriesPanel>();
-			if (panel != null && panel.isActiveAndEnabled && panel.SearchInputField != null)
+			if (_inner || !Plugin.FleaAmmoBoxSearchEnabled.Value || ragfair == null || string.IsNullOrEmpty(handbookId) || buildCount > 0
+				|| !string.IsNullOrEmpty(linkedSearchId) || !string.IsNullOrEmpty(neededSearchId))
 			{
-				break;
+				return null;
 			}
 
-			panel = null;
-		}
-
-		if (panel == null)
-		{
-			Plugin.Log.LogWarning("Ammo box search: the flea market didn't open in time, nothing typed");
-			yield break;
-		}
-
-		// A Filter by item chip from an earlier search would keep narrowing the list to that one item: off it goes, as the X on it does
-		var ragfair = ItemUiContext.Instance?.Session?.RagFair;
-		var chip = ragfair?.CancellableFilters[EFilterType.FilterSearch];
-		if (chip != null)
-		{
-			ragfair.RemoveCancellableFilter(chip, true);
-		}
-
-		for (var i = 0; i < 4 && panel != null; i++)
-		{
-			yield return new WaitForSecondsRealtime(0.4f);
-			if (panel != null && panel.SearchInputField != null && panel.SearchInputField.text != name)
+			// Only while the Filter by item chip is the reason for the request (picking the ammo in the tree is left alone)
+			if (!ragfair.CancellableFilters.IsActive(EFilterType.FilterSearch) || ragfair.FilterRule.FilterSearchId != handbookId)
 			{
-				panel.SearchInputField.text = name;
+				return null;
 			}
-		}
-	}
-}
 
-	internal class FleaAmmoBoxSearchPatch : ModulePatch
+			var boxes = BoxesFor(handbookId);
+			return boxes == null || boxes.Count == 0 ? null : new[] { handbookId }.Concat(boxes).ToList();
+		}
+
+		internal static Task<Result<OffersList>> Merged(EftClientBackendSession session, List<string> items, int page, int limit, int sortType, bool direction, int currency, int priceFrom,
+			int priceTo, int quantityFrom, int quantityTo, int conditionFrom, int conditionTo, bool oneHourExpiration, bool removeBartering, int offerOwnerType, bool onlyFunctional, bool updateOfferCount)
+		{
+			// Each answer is the first page of its item, long enough to cover the page asked for
+			var want = (page + 1) * limit;
+			var tasks = new List<Task<Result<OffersList>>>();
+			_inner = true;
+			try
+			{
+				foreach (var id in items)
+				{
+					tasks.Add(session.GetOffers(0, want, sortType, direction, currency, priceFrom, priceTo, quantityFrom, quantityTo, conditionFrom, conditionTo, oneHourExpiration, removeBartering,
+						offerOwnerType, onlyFunctional, id, string.Empty, string.Empty, new Dictionary<string, int>(), 0, updateOfferCount));
+				}
+			}
+			finally
+			{
+				_inner = false;
+			}
+
+			return Merge(tasks, page, limit, sortType, direction);
+		}
+
+		private static async Task<Result<OffersList>> Merge(List<Task<Result<OffersList>>> tasks, int page, int limit, int sortType, bool direction)
+		{
+			var results = await Task.WhenAll(tasks);
+			if (results.Any(result => result.Failed))
+			{
+				return results.First(result => result.Failed);
+			}
+
+			var first = results[0];
+			var offers = results.SelectMany(result => result.Value.offers).ToList();
+			var categories = new Dictionary<string, int>();
+			foreach (var pair in results.SelectMany(result => result.Value.categories ?? new Dictionary<string, int>()))
+			{
+				categories[pair.Key] = (categories.TryGetValue(pair.Key, out var count) ? count : 0) + pair.Value;
+			}
+
+			// The server sorted each answer; the merge is sorted the same way (the sort kinds the list offers; anything else keeps the order given)
+			IOrderedEnumerable<Offer> sorted;
+			switch ((ESortType)sortType)
+			{
+				case ESortType.Price: sorted = Order(offers, offer => (double)offer.SummaryCost, direction); break;
+				case ESortType.ExpirationDate: sorted = Order(offers, offer => (double)offer.EndTime.Ticks, direction); break;
+				case ESortType.Rating: sorted = Order(offers, offer => offer.User == null ? 0d : offer.User.Rating, direction); break;
+				case ESortType.Id: sorted = Order(offers, offer => (double)offer.IntId, direction); break;
+				default: sorted = Order(offers, offer => 0d, false); break;
+			}
+
+			var value = first.Value;
+			value.offers = sorted.Skip(page * limit).Take(limit).ToArray();
+			value.offersCount = results.Sum(result => result.Value.offersCount);
+			value.categories = categories;
+			return first;
+		}
+
+		private static IOrderedEnumerable<Offer> Order(List<Offer> offers, Func<Offer, double> key, bool descending) =>
+			descending ? offers.OrderByDescending(key) : offers.OrderBy(key);
+	}
+
+	internal class FleaAmmoBoxRequestPatch : ModulePatch
 	{
-		protected override MethodBase GetTargetMethod() => typeof(BaseItemContextInteractions).GetMethod("method_41", BindingFlags.Instance | BindingFlags.Public);
+		protected override MethodBase GetTargetMethod() => typeof(EftClientBackendSession).GetMethod(nameof(EftClientBackendSession.GetOffers), BindingFlags.Instance | BindingFlags.Public);
 
 		[PatchPrefix]
-		private static bool Prefix(BaseItemContextInteractions __instance)
+		private static bool Prefix(EftClientBackendSession __instance, ref Task<Result<OffersList>> __result, int page, int limit, int sortType, bool direction, int currency, int priceFrom, int priceTo,
+			int quantityFrom, int quantityTo, int conditionFrom, int conditionTo, bool oneHourExpiration, bool removeBartering, int offerOwnerType, bool onlyFunctional, string handbookId,
+			string linkedSearchId, string neededSearchId, int buildCount, bool updateOfferCount)
 		{
 			try
 			{
-				return !FleaAmmoBoxSearch.ShouldReplace(__instance);
+				var items = FleaAmmoBoxSearch.ItemsOf(__instance.RagFair, handbookId, linkedSearchId, neededSearchId, buildCount);
+				if (items == null)
+				{
+					return true;
+				}
+
+				Plugin.Verbose($"Flea: Filter by item on ammo, asking for {items.Count} items");
+				__result = FleaAmmoBoxSearch.Merged(__instance, items, page, limit, sortType, direction, currency, priceFrom, priceTo, quantityFrom, quantityTo, conditionFrom, conditionTo,
+					oneHourExpiration, removeBartering, offerOwnerType, onlyFunctional, updateOfferCount);
+				return false;
 			}
 			catch (Exception e)
 			{
-				// Never break the game's own search
-				Plugin.Log.LogError($"Ammo box search failed, using the game's search: {e}");
+				// Never break the game's own request
+				Plugin.Log.LogError($"Ammo box search failed, using the game's request: {e}");
 				return true;
+			}
+		}
+	}
+
+	// The game's list check lets an offer through for the one item searched; for ammo the boxes are let through too (the check runs as if the box were the item searched)
+	internal class FleaAmmoBoxAcceptPatch : ModulePatch
+	{
+		protected override MethodBase GetTargetMethod() => typeof(RagFair).GetMethod(nameof(RagFair.IsOfferAcceptable), BindingFlags.Instance | BindingFlags.Public);
+
+		[PatchPrefix]
+		private static void Prefix(RagFair __instance, Offer offer, out FilterRule? __state)
+		{
+			__state = null;
+			try
+			{
+				if (!Plugin.FleaAmmoBoxSearchEnabled.Value || offer?.Item == null || !__instance.CancellableFilters.IsActive(EFilterType.FilterSearch))
+				{
+					return;
+				}
+
+				var rule = __instance.FilterRule;
+				var boxes = string.IsNullOrEmpty(rule.FilterSearchId) ? null : FleaAmmoBoxSearch.BoxesFor(rule.FilterSearchId);
+				if (boxes != null && boxes.Contains(offer.Item.TemplateId.ToString()))
+				{
+					__state = rule;
+					rule.FilterSearchId = offer.Item.TemplateId.ToString();
+					__instance.FilterRule = rule;
+				}
+			}
+			catch (Exception e)
+			{
+				Plugin.Log.LogError($"Ammo box list check failed: {e}");
+			}
+		}
+
+		[PatchFinalizer]
+		private static void Finalizer(RagFair __instance, FilterRule? __state)
+		{
+			if (__state.HasValue)
+			{
+				__instance.FilterRule = __state.Value;
 			}
 		}
 	}

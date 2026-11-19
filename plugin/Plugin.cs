@@ -324,8 +324,9 @@ namespace CustomRpTweaks.Client
 			QuickBuyTraders = Config.Bind("01. Flea market", "6. Quick buy also uses trader offers", true,
 				"The quick buy (barter button, menu entry and the hideout craft buy button) also buys from the traders' offers on the flea market, not only from other players, whichever is cheapest. Ammo, for one, is mostly sold by traders. A trader's offer is only used if you could press Purchase on it yourself: the trader is unlocked, your loyalty level is high enough and you have not used up your buy limit. Off: other players' offers only.");
 			FleaAmmoBoxSearchEnabled = Config.Bind("01. Flea market", "7. Filter by item on ammo searches its boxes", true,
-				"Ammo can't be bought on the flea market, its boxes can. With this on, Filter by item (menu entry, and the Filter by Item key of UI Fixes) on an ammo item that has boxes on sale opens the flea market with a search by the ammo's name, so the list shows the ammo and all its boxes together. Ammo without a box on sale, and every other item, search as before.");
-			new FleaAmmoBoxSearchPatch().Enable();
+				"Ammo can't be bought on the flea market, its boxes can. With this on, Filter by item (menu entry, and the Filter by Item key of UI Fixes) on an ammo item that has boxes on sale lists the ammo and all its boxes together in the normal flea market list. Ammo without a box on sale, and every other item, search as before.");
+			new FleaAmmoBoxRequestPatch().Enable();
+			new FleaAmmoBoxAcceptPatch().Enable();
 			new FleaBarterBuyMenuPatch().Enable();
 			new FleaBarterBuyButtonsPatch().Enable();
 
