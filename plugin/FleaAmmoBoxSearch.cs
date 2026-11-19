@@ -13,7 +13,8 @@ namespace CustomRpTweaks.Client
 {
 	// Ammo can't be bought on the flea market, its boxes can. "Filter by item" (the menu entry, and the hotkey of UI Fixes, which runs the same
 	// game action) on an ammo item with boxes on sale searches those boxes instead. Anything else, and ammo without a box on sale, keeps the
-	// game's own search. The game's plain filter takes one template; the search the builds use takes a list, so that one carries the boxes.
+	// game's own search. The game's plain filter takes one template; the search the builds use takes a list, so that one carries the ammo (always
+	// listed, greyed out when nothing sells it, which is the usual case) and its boxes.
 	internal static class FleaAmmoBoxSearch
 	{
 		// Ammo template id -> the boxes that hold it and can be listed on the flea market; built once, the templates don't change in a session
@@ -78,9 +79,9 @@ namespace CustomRpTweaks.Client
 			{
 				BuildName = item.ShortName.Localized() + " boxes",
 				BuildCount = 1,
-				BuildItems = boxes.ToDictionary(id => id, id => 1)
+				BuildItems = new[] { item.TemplateId.ToString() }.Concat(boxes).ToDictionary(id => id, id => 1)
 			};
-			Plugin.Verbose($"Flea: {item.ShortName.Localized()} searched as {boxes.Count} box(es)");
+			Plugin.Verbose($"Flea: {item.ShortName.Localized()} searched as itself and {boxes.Count} box(es)");
 			interactions.Search(new RagfairSearch(EFilterType.BuildItems, value, true));
 			return true;
 		}
