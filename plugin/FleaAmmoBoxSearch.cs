@@ -82,7 +82,7 @@ namespace CustomRpTweaks.Client
 			Plugin.Verbose($"Flea: {item.ShortName.Localized()} listed with {boxes.Count} box(es) in the tree");
 			// Any search opens the flea market; this one only switches off the one-hour-expiration filter, which is off unless turned on
 			interactions.Search(new RagfairSearch(EFilterType.OneHourExpiration, 0, false));
-			Plugin.Instance.StartCoroutine(FillTree(interactions.UIContext, ids, (item.TemplateId.ToString() + " Name").Localized()));
+			Plugin.Instance.StartCoroutine(FillTree(interactions.UIContext, ids, (item.TemplateId.ToString() + " Name").Localized(), item.TemplateId.ToString()));
 			return true;
 		}
 
@@ -104,7 +104,7 @@ namespace CustomRpTweaks.Client
 			return member is System.Collections.ICollection collection ? collection.Count : 0;
 		}
 
-		private static IEnumerator FillTree(ItemUiContext uiContext, List<string> ids, string name)
+		private static IEnumerator FillTree(ItemUiContext uiContext, List<string> ids, string name, string selectId)
 		{
 			// The screen builds its own tree as it opens; filling before that is done gets overwritten (or wipes it). Wait until the tree has rows
 			// and has stayed that way for a moment.
@@ -150,18 +150,18 @@ namespace CustomRpTweaks.Client
 
 			ShowAsSearch(panel, name);
 
-			// The rows are made over the next frames; select the first as soon as it exists
-			for (var tries = 0; tries < 20 && panel != null; tries++)
+			// Pick the ammo the way a click on its row does: the screen's own handler makes the request, and when the answer arrives the screen
+			// deselects the row it had and highlights this one. (Highlighting the row directly would leave the screen not knowing about it.)
+			var offerList = UnityEngine.Object.FindObjectsOfType<OfferViewList>().FirstOrDefault(view => view.isActiveAndEnabled
+				&& typeof(OfferViewList).GetField("_browseCategoriesPanel", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(view) == panel);
+			if (offerList == null)
 			{
-				yield return new WaitForSecondsRealtime(0.1f);
-				if (panel.SelectNode(ids[0]) != null)
-				{
-					Plugin.Verbose($"Flea: first row selected after {(tries + 1) * 0.1f:0.0} s");
-					yield break;
-				}
+				Plugin.Log.LogWarning("Ammo box search: the flea market's offer list wasn't found, the tree is filled but nothing was picked");
+				yield break;
 			}
 
-			Plugin.Log.LogWarning($"Ammo box search: the rows were added but the first one could not be selected ({(panel == null ? 0 : ViewCount(panel))} rows)");
+			offerList.HandbookNodeIdChangedHandler(selectId, true);
+			Plugin.Verbose($"Flea: asked for the offers of {selectId}");
 		}
 	}
 
