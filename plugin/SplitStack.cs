@@ -45,7 +45,7 @@ namespace CustomRpTweaks.Client
 				// The new stack gets the lower half, so an odd stack keeps the extra one
 				var count = item.StackObjectsCount / 2;
 				string refusal = null;
-				foreach (var target in Dismantle.Targets(controller, item))
+				foreach (var target in Dismantle.TargetsInOrder(controller, item))
 				{
 					foreach (var grid in target.Grids)
 					{
@@ -62,8 +62,8 @@ namespace CustomRpTweaks.Client
 							continue;
 						}
 
-						Plugin.Verbose($"Split: {item.ShortName.Localized()} x{count} into {target.ShortName.Localized()} (targets in order: {string.Join(", ", Dismantle.Targets(controller, item).Select(t => t.ShortName.Localized()).ToArray())})");
-							var outcome = await ItemUiContext.RunWithSound(controller, item, operation);
+						Plugin.Verbose($"Split: {item.ShortName.Localized()} x{count} into {target.ShortName.Localized()}");
+						var outcome = await ItemUiContext.RunWithSound(controller, item, operation);
 						if (outcome.Failed)
 						{
 							Plugin.Log.LogWarning($"Split: {item.ShortName.Localized()} failed ({outcome.Error})");

@@ -341,23 +341,26 @@ namespace CustomRpTweaks.Client
 		// someone else's gear (a body, another character) or something lying in a bag that is not yours, what you carry. Stash items
 		// only go to the stash grid. Used for the parts taken off an item, for the round taken out of a chamber and for the new stack
 		// of a split.
-		internal static List<CompoundItem> Targets(InventoryController controller, Item item)
+		internal static List<CompoundItem> Targets(InventoryController controller, Item item) => TargetsInOrder(controller, item).ToList();
+
+		// The same list, worked out one tier at a time as it is read: a caller that stops at the first container with room (a split into the
+		// container the stack lies in) never pays for the later tiers, the scene search for open inventories among them
+		internal static IEnumerable<CompoundItem> TargetsInOrder(InventoryController controller, Item item)
 		{
-			var targets = new List<CompoundItem>();
-			void Add(CompoundItem container)
-			{
-				if (container != null && container.Grids != null && container.Grids.Length > 0 && !targets.Contains(container))
-				{
-					targets.Add(container);
-				}
-			}
+			var seen = new HashSet<CompoundItem>();
+			bool Fresh(CompoundItem container) =>
+				container != null && container.Grids != null && container.Grids.Length > 0 && !(container == item || IsInside(container, item)) && seen.Add(container);
 
 			// The first ancestor (or the item itself) that lies in a grid
 			for (var current = item; current != null; current = HolderOf(current))
 			{
 				if (current.Parent?.Container is Grid grid)
 				{
-					Add(grid.ParentItem);
+					if (Fresh(grid.ParentItem))
+					{
+						yield return grid.ParentItem;
+					}
+
 					break;
 				}
 			}
@@ -373,26 +376,38 @@ namespace CustomRpTweaks.Client
 			{
 				foreach (var carried in CarriedContainers(equipment, equipment == controller.Inventory.Equipment))
 				{
-					Add(carried);
+					if (Fresh(carried))
+					{
+						yield return carried;
+					}
 				}
 
 				// An inventory you have open counts too (a bag on the ground, a body), before the other side
 				foreach (var open in OpenContainers(controller))
 				{
-					Add(open);
+					if (Fresh(open))
+					{
+						yield return open;
+					}
 				}
 
 				if (equipment == controller.Inventory.Equipment)
 				{
 					// Your own gear, in the menu: the stash is part of your inventory too, but what you carry stays on you first
-					Add(controller.Inventory.Stash);
+					if (Fresh(controller.Inventory.Stash))
+					{
+						yield return controller.Inventory.Stash;
+					}
 				}
 				else
 				{
 					// Someone else's gear (a dead body, another character): when theirs and the open ones are full, what you carry
 					foreach (var carried in CarriedContainers(controller.Inventory.Equipment))
 					{
-						Add(carried);
+						if (Fresh(carried))
+						{
+							yield return carried;
+						}
 					}
 				}
 			}
@@ -402,17 +417,20 @@ namespace CustomRpTweaks.Client
 				// any other inventory open, then what you carry
 				foreach (var open in OpenContainers(controller))
 				{
-					Add(open);
+					if (Fresh(open))
+					{
+						yield return open;
+					}
 				}
 
 				foreach (var carried in CarriedContainers(controller.Inventory.Equipment))
 				{
-					Add(carried);
+					if (Fresh(carried))
+					{
+						yield return carried;
+					}
 				}
 			}
-
-			targets.RemoveAll(target => target == item || IsInside(target, item));
-			return targets;
 		}
 
 		// Every container a character carries (pockets, vests, armored rigs, backpacks, the secured container...) in whatever order the
