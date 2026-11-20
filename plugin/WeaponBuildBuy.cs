@@ -106,18 +106,29 @@ namespace CustomRpTweaks.Client
 		// Lying loose in a container (not on a weapon): what the game's assembly takes from the stash
 		private static bool IsLoose(Mod mod) => mod.PinLockState != EItemPinLockState.Locked && mod.Parent?.Container?.ParentItem != null && mod.Parent.Container.ParentItem.IsContainer;
 
-		// What the weapon wears and the stash holds loose (with whatever is attached to it)
+		// What the weapon wears and the stash holds loose. Parts attached to a loose part (a scope in a mount) are not counted here: the game's
+		// assembly doesn't take them off, so they are demounted first (see Donors)
 		private static Dictionary<string, int> Available(Weapon body, IEnumerable<Item> stash)
 		{
 			var mods = new List<Mod>(ModsOf(body));
-			foreach (var loose in stash.OfType<Mod>().Where(IsLoose))
-			{
-				mods.Add(loose);
-				mods.AddRange(ModsOf(loose));
-			}
-
+			mods.AddRange(stash.OfType<Mod>().Where(IsLoose));
 			return Count(mods);
 		}
+
+		// A part that can be taken off its parent without harm: not locked, not in a vital slot, nothing attached to it, not a magazine
+		private static bool CanDemount(Mod mod)
+		{
+			if (mod is Magazine || mod.PinLockState == EItemPinLockState.Locked || !(mod.Parent is SlotItemAddress address) || address.Slot.Required)
+			{
+				return false;
+			}
+
+			return !mod.Slots.Any(slot => slot.ContainedItem != null && !(slot.ContainedItem is Ammo));
+		}
+
+		// Parts attached to loose parts in the stash (a scope in a mount) that can be demounted
+		private static List<Mod> LooseDonors(IEnumerable<Item> stash) =>
+			stash.OfType<Mod>().Where(IsLoose).SelectMany(ModsOf).Where(CanDemount).ToList();
 
 		private static Dictionary<string, int> Lacking(Dictionary<string, int> needed, Dictionary<string, int> available)
 		{
@@ -142,17 +153,10 @@ namespace CustomRpTweaks.Client
 			{
 				foreach (var mod in ModsOf(weapon))
 				{
-					if (mod is Magazine || mod.PinLockState == EItemPinLockState.Locked || !(mod.Parent is SlotItemAddress address) || address.Slot.Required)
+					if (CanDemount(mod))
 					{
-						continue;
+						donors.Add(mod);
 					}
-
-					if (mod.Slots.Any(slot => slot.ContainedItem != null && !(slot.ContainedItem is Ammo)))
-					{
-						continue;
-					}
-
-					donors.Add(mod);
 				}
 			}
 
@@ -272,10 +276,16 @@ namespace CustomRpTweaks.Client
 			var stash = controller.Inventory.Stash.GetAllItemsFromCollection().ToList();
 			analysis.Lacking = Lacking(analysis.Needed, Available(weapon, stash));
 
-			// Parts of other weapons that can go on this one (a setting): taken off after the purchase is worked out
-			if (Plugin.BuildBorrow.Value && analysis.Lacking.Count > 0)
+			// Parts that must be demounted first: those on loose parts always, those on other weapons only with the setting. Taken off
+			// after the purchase is worked out
+			if (analysis.Lacking.Count > 0)
 			{
-				var donors = Donors(weapon, stash);
+				var donors = LooseDonors(stash);
+				if (Plugin.BuildBorrow.Value)
+				{
+					donors.AddRange(Donors(weapon, stash));
+				}
+
 				foreach (var template in analysis.Lacking.Keys.ToList())
 				{
 					foreach (var donor in donors.Where(mod => mod.TemplateId == template).Take(analysis.Lacking[template]))
@@ -336,7 +346,7 @@ namespace CustomRpTweaks.Client
 
 			if (analysis.Borrowed.Count > 0)
 			{
-				lines.Add("<b>Takes from other weapons:</b> " + string.Join(", ", analysis.Borrowed.GroupBy(mod => mod.TemplateId).Select(group => $"{group.Count()} {group.First().ShortName.Localized(null)}")));
+				lines.Add("<b>Takes off mounts and other weapons:</b> " + string.Join(", ", analysis.Borrowed.GroupBy(mod => mod.TemplateId).Select(group => $"{group.Count()} {group.First().ShortName.Localized(null)}")));
 			}
 
 			if (analysis.Lacking.Count == 0)
