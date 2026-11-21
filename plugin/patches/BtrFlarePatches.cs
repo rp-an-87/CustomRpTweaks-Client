@@ -40,9 +40,11 @@ namespace CustomRpTweaks.Client.Patches
 		private static string _at;              // the stop the BTR is at, or is on its way to, in the plan
 		private static readonly Queue<string> _plan = new Queue<string>();   // the stops still to drive to, in order
 
-		// a paid ride (the driver's "take me to") that needs more than one road: the stops still to drive to, with you aboard
+		// a drive over more than one road that is not a call: a paid ride (the driver's "take me to") with you aboard, or the BTR's first leg to a
+		// random stop. The stops still to drive to, in order.
 		private static BTRVehicle _rideVehicle;
 		private static string _rideAt;
+		private static bool _ridePaid;
 		private static readonly Queue<string> _ridePlan = new Queue<string>();
 
 		internal static void Notify(string message)
@@ -102,6 +104,11 @@ namespace CustomRpTweaks.Client.Patches
 			if (_target != null && ReferenceEquals(vehicle, _vehicle))
 			{
 				Notify($"the BTR is already on its way to {_target}.");
+				return;
+			}
+			if (_rideVehicle != null && ReferenceEquals(vehicle, _rideVehicle))
+			{
+				Notify("the BTR is busy getting to its first stop, try again in a moment.");
 				return;
 			}
 
@@ -300,6 +307,7 @@ namespace CustomRpTweaks.Client.Patches
 			}
 			_rideVehicle = vehicle;
 			_rideAt = path[0];
+			_ridePaid = true;
 			idPathDestination = parts[0] + "/" + path[0];
 			Notify($"the BTR takes you to {destination} via {string.Join(", ", path.Take(path.Count - 1))}.".Replace(" via .", "."));
 			return true;
@@ -331,7 +339,7 @@ namespace CustomRpTweaks.Client.Patches
 				_ridePlan.Clear();
 				return;
 			}
-			vehicle.IsPaid = true;
+			vehicle.IsPaid = _ridePaid;
 			vehicle.MoveToDestination(next);
 			ShortPause(vehicle, PassThroughWait);
 			_rideAt = next;
@@ -347,10 +355,81 @@ namespace CustomRpTweaks.Client.Patches
 			vehicle.timeToEndPause = Mathf.Min(seconds, total);
 		}
 
+		// ---- the BTR's first leg -----------------------------------------------------------------------------------------------------------------
+
+		// Called right after the game put the BTR on its entry point and sent it to the route's first stop: sends it to a random stop of the route instead,
+		// over the stops between, and the route goes on from there. The first stop is only waited at for the normal pause.
+		internal static void StartAtRandomStop(VehicleBase vehicle)
+		{
+			var btr = vehicle as BTRVehicle;
+			var route = vehicle.CurrentPathConfig;
+			var map = vehicle.MapPathConfig;
+			var entry = Traverse.Create(vehicle).Field("_currentPathDestination").GetValue<PathDestination>();
+			if (!Plugin.BtrRandomStart.Value || btr == null || map == null || entry == null || route?.pathPoints == null || route.pathPoints.Count < 2 || route.once || !route.circle)
+			{
+				return;
+			}
+
+			var parents = Search(BuildGraph(map, route, keepEntry: true), entry.id);
+			var stops = route.pathPoints.Distinct().Where(id => id != entry.id && parents.ContainsKey(id)).ToList();
+			if (stops.Count == 0)
+			{
+				Plugin.Verbose("BTR first stop: no stop of the route can be reached from the entry point, the BTR goes to its first stop.");
+				return;
+			}
+
+			var target = stops[Random.Range(0, stops.Count)];
+			var path = PathTo(parents, target);
+			if (path.Count == 1 && path[0] == route.pathPoints[0])
+			{
+				Plugin.Log.LogInfo($"BTR first stop: {target}, the route's own first stop.");
+				return;
+			}
+
+			_rideVehicle = btr;
+			_ridePaid = false;
+			_ridePlan.Clear();
+			foreach (var id in path.Skip(1))
+			{
+				_ridePlan.Enqueue(id);
+			}
+			_rideAt = path[0];
+			btr.MoveToDestination(path[0]);
+			btr.BtrState = EBtrState.Running;
+			Plugin.Log.LogInfo($"BTR first stop: {target} (route {route.id}: {string.Join(",", route.pathPoints)}), from the entry point {entry.id} via {string.Join(", ", path)}.");
+		}
+
+		// ---- checks on the route the game picked ---------------------------------------------------------------------------------------------------
+
+		internal static bool Joined(MapPathConfig map, string a, string b) => map.GetPathSplineByPoints(a, b) != null;
+
+		// Every stop of the route joined to the next by road, from the entry point to the exit point
+		internal static bool RouteIsDrivable(MapPathConfig map, PathConfig route)
+		{
+			var sequence = new List<string> { route.enterPoint };
+			sequence.AddRange(route.pathPoints);
+			sequence.Add(route.exitPoint);
+			for (var i = 0; i < sequence.Count - 1; i++)
+			{
+				if (!Joined(map, sequence[i], sequence[i + 1]))
+				{
+					return false;
+				}
+			}
+			return true;
+		}
+
+		internal static void DumpMap(MapPathConfig map, PathConfig route)
+		{
+			Plugin.Log.LogInfo($"BTR map: route {route.id} {route.enterPoint} > {string.Join(",", route.pathPoints)} > {route.exitPoint} (circle {route.circle}, once {route.once}, laps {route.circleCount}); "
+				+ $"stops {string.Join(" ", map.PathDestinations.Where(d => d != null).Select(d => $"{d.id}@{d.transform.position:0}"))}; "
+				+ $"roads {string.Join(" ", map.PathSplines.Where(sp => sp != null).Select(sp => sp.id))}");
+		}
+
 		// ---- the graph of stops ---------------------------------------------------------------------------------------------------------------
 
 		// Stops of the map joined by a spline (spline ids are "s_<stop>_<stop>"); the route's entry and exit points are left out: arriving at the exit point sends the BTR away
-		private static Dictionary<string, List<string>> BuildGraph(MapPathConfig map, PathConfig route)
+		private static Dictionary<string, List<string>> BuildGraph(MapPathConfig map, PathConfig route, bool keepEntry = false)
 		{
 			var stopIds = new HashSet<string>(map.PathDestinations.Where(stop => stop != null).Select(stop => stop.id));
 			var graph = new Dictionary<string, List<string>>();
@@ -373,7 +452,8 @@ namespace CustomRpTweaks.Client.Patches
 					continue;
 				}
 				string a = parts[1], b = parts[2];
-				if (!stopIds.Contains(a) || !stopIds.Contains(b) || a == route.enterPoint || a == route.exitPoint || b == route.enterPoint || b == route.exitPoint)
+				var leftOut = new[] { a, b }.Any(id => (id == route.exitPoint || id == route.enterPoint) && !(keepEntry && id == route.enterPoint));
+				if (!stopIds.Contains(a) || !stopIds.Contains(b) || leftOut)
 				{
 					continue;
 				}
@@ -488,91 +568,118 @@ namespace CustomRpTweaks.Client.Patches
 		}
 	}
 
-	// Where the BTR comes from and which way round it goes. The routes are fixed lists of stops, and on Woods the BTR starts at the same place and
-	// drives the same circle every raid. These two make it less predictable: it may appear at a random stop of its route (not close to you), and a
-	// circle route is driven the other way round half the time.
-	internal class BtrRouteReversePatch : ModulePatch
+	// What the BTR does at the start of a raid. The routes are fixed lists of stops, and on Woods the BTR comes in at the same place and drives the same
+	// circle every raid. Before the game builds the route: the route is checked (a stop not joined by road to the next would leave the BTR stuck; a
+	// route from the server is replaced by a drivable one), may be reversed, and may use another of the map's entry points.
+	internal class BtrRoutePatch : ModulePatch
 	{
 		protected override MethodBase GetTargetMethod() => typeof(VehicleBase).GetMethod(nameof(VehicleBase.Initialization), BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly);
 
-		// runs before the game builds the route's stops and splines from the route's list
 		[PatchPrefix]
 		private static void Prefix(VehicleBase __instance, MapPathConfig mapPathsConfig)
 		{
-			if (!Plugin.BtrRandomDirection.Value)
+			try
 			{
-				return;
-			}
-			var route = __instance.CurrentPathConfig;
-			if (route?.pathPoints == null || route.pathPoints.Count < 3 || route.once || !route.circle || route.enterPoint != route.exitPoint)
-			{
-				return;
-			}
-			if (Random.value < 0.5f)
-			{
-				Plugin.Verbose($"BTR route {route.id}: driven the original way round: {string.Join(",", route.pathPoints)}");
-				return;
-			}
-
-			var reversed = route.pathPoints.AsEnumerable().Reverse().ToList();
-			// the entry point has to be joined to the new first stop and the exit to the new last one (same point, joined to both ends of the circle)
-			var sequence = new List<string> { route.enterPoint };
-			sequence.AddRange(reversed);
-			sequence.Add(route.exitPoint);
-			for (var i = 0; i < sequence.Count - 1; i++)
-			{
-				if (mapPathsConfig.GetPathSplineByPoints(sequence[i], sequence[i + 1]) == null)
+				var route = __instance.CurrentPathConfig;
+				if (route?.pathPoints == null || mapPathsConfig == null)
 				{
-					Plugin.Log.LogWarning($"BTR route {route.id} cannot be reversed: no spline between {sequence[i]} and {sequence[i + 1]}.");
 					return;
 				}
+
+				if (!BtrCall.RouteIsDrivable(mapPathsConfig, route))
+				{
+					var alternatives = (mapPathsConfig.PathsConfiguration.pathsConfigurations ?? new PathConfig[0])
+						.Where(r => r != null && r.active && r != route && r.pathPoints != null && BtrCall.RouteIsDrivable(mapPathsConfig, r)).ToList();
+					Plugin.Log.LogWarning($"BTR route {route.id} ({route.enterPoint} > {string.Join(",", route.pathPoints)} > {route.exitPoint}) has stops that are not joined by road; "
+						+ (alternatives.Count > 0 ? "using another route." : "no drivable route to use instead, keeping it."));
+					if (alternatives.Count > 0)
+					{
+						route = alternatives[Random.Range(0, alternatives.Count)];
+						__instance.CurrentPathConfig = route;
+					}
+				}
+
+				BtrCall.DumpMap(mapPathsConfig, route);
+				if (Plugin.BtrRandomDirection.Value)
+				{
+					Reverse(route, mapPathsConfig);
+				}
+				if (Plugin.BtrRandomEntry.Value)
+				{
+					PickEntry(route, mapPathsConfig);
+				}
+			}
+			catch (System.Exception e)
+			{
+				Plugin.Log.LogError("BTR route check failed: " + e);
+			}
+		}
+
+		// A circle route is driven the other way round half the time
+		private static void Reverse(PathConfig route, MapPathConfig map)
+		{
+			if (route.pathPoints.Count < 3 || route.once || !route.circle || route.enterPoint != route.exitPoint || Random.value < 0.5f)
+			{
+				return;
+			}
+			var reversed = route.pathPoints.AsEnumerable().Reverse().ToList();
+			var candidate = new PathConfig { enterPoint = route.enterPoint, exitPoint = route.exitPoint, pathPoints = reversed };
+			if (!BtrCall.RouteIsDrivable(map, candidate))
+			{
+				Plugin.Verbose($"BTR route {route.id} cannot be reversed: a stop is not joined to the next by road.");
+				return;
 			}
 			route.pathPoints = reversed;
 			Plugin.Log.LogInfo($"BTR route {route.id} is driven the other way round this raid: {string.Join(",", reversed)}");
+		}
+
+		// The route may start and end at another of the map's entry points (those the map's routes use), as long as it is joined to where the route ends
+		// and to where it begins (or, with a random first stop, to any stop)
+		private static void PickEntry(PathConfig route, MapPathConfig map)
+		{
+			if (route.once || !route.circle || route.enterPoint != route.exitPoint)
+			{
+				return;
+			}
+			var first = route.pathPoints[0];
+			var last = route.pathPoints[route.pathPoints.Count - 1];
+			var options = (map.PathsConfiguration.pathsConfigurations ?? new PathConfig[0])
+				.Where(r => r != null && r.enterPoint == r.exitPoint)
+				.Select(r => r.enterPoint)
+				.Concat(new[] { route.enterPoint })
+				.Distinct()
+				.Where(entry => BtrCall.Joined(map, last, entry)
+					&& (Plugin.BtrRandomStart.Value ? route.pathPoints.Any(stop => BtrCall.Joined(map, entry, stop)) : BtrCall.Joined(map, entry, first)))
+				.ToList();
+			if (options.Count == 0)
+			{
+				return;
+			}
+			var pick = options[Random.Range(0, options.Count)];
+			if (pick != route.enterPoint)
+			{
+				Plugin.Log.LogInfo($"BTR route {route.id} enters from {pick} instead of {route.enterPoint} this raid (entry points that fit: {string.Join(", ", options)}).");
+				route.enterPoint = pick;
+				route.exitPoint = pick;
+			}
 		}
 	}
 
 	internal class BtrRandomStartPatch : ModulePatch
 	{
-		protected override MethodBase GetTargetMethod() => typeof(VehicleBase).GetMethod(nameof(VehicleBase.SpawnInEnterPoint), BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly);
+		protected override MethodBase GetTargetMethod() => typeof(VehicleBase).GetMethod(nameof(VehicleBase.MoveEnable), BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly);
 
-		// Replaces putting the BTR on its entry point with putting it on a random stop of its route, at least a set distance from you
-		[PatchPrefix]
-		private static bool Prefix(VehicleBase __instance)
+		[PatchPostfix]
+		private static void Postfix(VehicleBase __instance)
 		{
-			if (!Plugin.BtrRandomStart.Value)
+			try
 			{
-				return true;
+				BtrCall.StartAtRandomStop(__instance);
 			}
-			var route = __instance.CurrentPathConfig;
-			var map = __instance.MapPathConfig;
-			if (route?.pathPoints == null || route.pathPoints.Count < 2 || route.once || !route.circle || map == null)
+			catch (System.Exception e)
 			{
-				return true;
+				Plugin.Log.LogError("BTR first stop failed: " + e);
 			}
-
-			var player = Singleton<GameWorld>.Instance?.MainPlayer;
-			var minDistance = Plugin.BtrRandomStartMinDistance.Value;
-			var options = route.pathPoints
-				.Select(id => map.GetPartPathByID(id) as PathDestination)
-				.Where(stop => stop != null && (player == null || Vector3.Distance(stop.transform.position, player.Transform.position) >= minDistance))
-				.ToList();
-			if (options.Count == 0)
-			{
-				Plugin.Verbose("BTR random start: every stop is closer than the minimum distance, the BTR starts at its entry point.");
-				return true;
-			}
-
-			var stop = options[Random.Range(0, options.Count)];
-			var traverse = Traverse.Create(__instance);
-			__instance.transform.position = stop.transform.position;
-			__instance.transform.rotation = stop.transform.rotation;
-			traverse.Field("_currentPathDestination").SetValue(stop);
-			traverse.Field("_targetPathDestination").SetValue(stop);
-			traverse.Field("_changeSpeedMultiplier").SetValue(0.1f);
-			GlobalEventsController.CreateEvent<BtrSpawnOnThePathEvent>().Invoke(stop.transform.position, stop.transform.rotation, string.Empty);
-			Plugin.Log.LogInfo($"BTR random start: the BTR appears at stop {stop.id} of route {route.id} ({string.Join(",", route.pathPoints)}).");
-			return false;
 		}
 	}
 }

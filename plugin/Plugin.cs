@@ -87,7 +87,7 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<float> BtrFlareMinStanding;
 		internal static ConfigEntry<float> BtrFlareMaxDistance;
 		internal static ConfigEntry<bool> BtrRandomStart;
-		internal static ConfigEntry<float> BtrRandomStartMinDistance;
+		internal static ConfigEntry<bool> BtrRandomEntry;
 		internal static ConfigEntry<bool> BtrRandomDirection;
 
 		internal static ConfigEntry<bool> ScaleLoadAmmoSpeed;
@@ -379,13 +379,13 @@ namespace CustomRpTweaks.Client
 			new BtrStopReachedPatch().Enable();
 			new BtrRidePatch().Enable();
 
-			BtrRandomStart = Config.Bind("22. BTR", "10. BTR starts at a random stop of its route", true,
-				"Vanilla: the BTR appears at its entry point (on Woods, the same place nearly every raid) and drives its circle from the first stop. On = it appears at a random stop of its route instead, never one closer to you than the distance below, and carries on from there. Applies when the BTR appears (one to three minutes into the raid with the current server settings).");
-			BtrRandomStartMinDistance = Config.Bind("22. BTR", "11. Random start: not closer to you than (m)", 250f,
-				new ConfigDescription("The BTR never appears at a stop closer than this to you, so it does not pop up in front of you. If every stop is closer it starts at its entry point.", new AcceptableValueRange<float>(0f, 1500f)));
+			BtrRandomStart = Config.Bind("22. BTR", "10. BTR goes to a random stop first", true,
+				"Vanilla: the BTR comes in at its entry point and drives its circle from the route's first stop (on Woods, nearly the same every raid). On = it comes in the same way, then drives to a random stop of its route first (over the stops in between, a second at each) and the route goes on from there. Applies when the BTR appears (one to three minutes into the raid with the current server settings).");
+			BtrRandomEntry = Config.Bind("22. BTR", "11. BTR comes in from a random entry point", true,
+				"Vanilla: each route has its own entry point. On = the BTR may come in (and leave) at any of the map's entry points that is joined by road to the route. Applies when the raid starts.");
 			BtrRandomDirection = Config.Bind("22. BTR", "12. BTR drives its circle the other way round half the time", true,
-				"Vanilla: the BTR always drives a route in the order it is listed. On = for routes that go round in a circle, half the raids the order is reversed (same stops, other direction). Applies to the raid the BTR is set up in.");
-			new BtrRouteReversePatch().Enable();
+				"Vanilla: the BTR always drives a route in the order it is listed. On = for routes that go round in a circle, half the raids the order is reversed (same stops, other direction). Applies when the raid starts.");
+			new BtrRoutePatch().Enable();
 			new BtrRandomStartPatch().Enable();
 
 			BtrNotEnemyOfPmcs = Config.Bind("25. Bot hostility", "1. BTR is not an enemy of PMC bots", true,
