@@ -370,14 +370,13 @@ namespace CustomRpTweaks.Client
 			new BtrCannonCamPatch().Enable();
 
 			BtrFlareCall = Config.Bind("22. BTR", "7. BTR signal cartridge calls the BTR", true,
-				"Firing the BTR signal cartridge (a reactive cartridge the server mod adds; spawn it or craft it) calls the BTR to the stop nearest to where the flare went up, on its route or off it. If the BTR is waiting at a stop it leaves at once, otherwise it finishes the segment it is on, then goes straight there (a second's wait at the stops on the way) and waits its normal pause. If that stop is off its route, it then drives back to the route stop nearest to it and goes on from there. Needs the BTR to be on the map. Off = the cartridge does nothing.");
-			BtrFlareMinStanding = Config.Bind("22. BTR", "8. BTR signal: minimum standing with the BTR driver", 0f,
-				new ConfigDescription("The flare only works when your standing with the BTR driver is at least this. 0 = no requirement. The questline gives about 1.3 in total (the unit is the number the trader screen shows).", new AcceptableValueRange<float>(0f, 5f)));
+				"Firing the BTR signal cartridge (a reactive cartridge the server mod adds; Prapor sells it) calls the BTR to the stop nearest to where the flare went up, on its route or off it. If the BTR is waiting at a stop it leaves at once, otherwise it finishes the segment it is on, then goes straight there and waits its normal pause. If that stop is off its route, it then drives back to the route stop nearest to it and goes on from there. Needs the BTR to be on the map. Off = the cartridge does nothing.");
+			BtrFlareMinStanding = Config.Bind("22. BTR", "8. BTR signal: minimum standing with the BTR driver", 0.4f,
+				new ConfigDescription("The BTR only answers the flare when your standing with the BTR driver is at least this; below it the flare does nothing (you get a message). Anyone can buy the cartridge from Prapor, this is what keeps it useless until you have worked with the BTR. 0 = no requirement. His questline gives about 1.3 in total (the unit is the number the trader screen shows), so the default is about the middle.", new AcceptableValueRange<float>(0f, 5f)));
 			BtrFlareMaxDistance = Config.Bind("22. BTR", "9. BTR signal: furthest stop (m)", 600f,
 				new ConfigDescription("If the stop nearest to the flare is further away than this (in a straight line, ignoring height), the BTR is not called.", new AcceptableValueRange<float>(50f, 3000f)));
 			new BtrFlareSuccessPatch().Enable();
 			new BtrStopReachedPatch().Enable();
-			new BtrRidePatch().Enable();
 
 			BtrRandomStart = Config.Bind("22. BTR", "10. BTR goes to a random stop first", true,
 				"Vanilla: the BTR comes in at its entry point and drives its circle from the route's first stop (on Woods, nearly the same every raid). On = it comes in the same way, then drives to a random stop of its route first (over the stops in between, a second at each) and the route goes on from there. Applies when the BTR appears (one to three minutes into the raid with the current server settings).");

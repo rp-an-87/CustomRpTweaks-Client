@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using Comfort.Common;
 using EFT;
 using EFT.Communications;
 using EFT.GlobalEvents;
@@ -14,40 +13,29 @@ using UnityEngine;
 namespace CustomRpTweaks.Client.Patches
 {
 	// The BTR signal cartridge (added by the server mod, BtrFlare.cs): a white reactive cartridge with no flare type, so the game does nothing with it
-	// on its own. Like the artillery flare, it is recognised when the flare succeeds (the game calls Player.HandleFlareSuccessEvent with the position
-	// and the ammo when the flare is high enough).
+	// on its own. Like the artillery flare it is recognised when the flare succeeds (the game calls Player.HandleFlareSuccessEvent with the position and
+	// the ammo once the flare is high enough).
 	//
-	// The BTR then goes to the stop nearest to where the flare went up, on its route or not. It drives along splines between neighbouring stops of the
-	// map, so the way there is found on the graph of all stops (breadth first) and driven stop by stop with the game's own "take me to" call
-	// (BTRVehicle.MoveToDestination). If it is waiting at a stop it leaves at once, otherwise it finishes the segment it is on and carries on at once;
-	// at the stops on the way it waits a second. At the called stop it waits its normal pause.
-	// If that stop is on the route the game carries on from there. If not, the game cannot (it finds the next stop from the place of the current one in
-	// the route), so the BTR drives back to the route stop nearest to it, and the game carries on from that one.
+	// The BTR goes to the stop nearest to the flare, on its route or not. Every move is the game's own "take me to" call, BTRVehicle.MoveToDestination,
+	// which drives the one road between the stop the BTR is at and the target. On Woods every stop has a road to every other, so that is enough; a stop
+	// without a road from where the BTR is simply is not offered. If the BTR is waiting at a stop it leaves at once, otherwise it finishes the segment it
+	// is on and goes on at once. At the called stop it waits its normal pause. If the stop is on its route the game carries on from there. If not, it
+	// cannot (it finds the next stop from the place of the current one in the route), so the BTR drives back to the nearest route stop first.
 	internal static class BtrCall
 	{
 		// ammo id of the cartridge, same as BtrFlareItems.AmmoId in the server mod
 		internal const string AmmoId = "6a1b7c0d4e5f60718293a4b6";
 		internal const string BtrTraderId = "656f0f98d80a697f855d34b1";
-		// seconds the BTR waits at a stop it only passes through on the way
-		private const float PassThroughWait = 1f;
 
-		private enum Phase { None, Going, Returning }
+		private enum Kind { None, Call, Return, FirstLeg }
 
 		private static BTRVehicle _vehicle;
-		private static string _target;          // the stop the BTR was called to; null = no call pending
+		private static Kind _kind;
+		private static string _arriveAt;     // the stop the BTR will reach next
+		private static string _then;         // the stop to go on to from there, before the journey's last one
 		private static bool _targetOnRoute;
-		private static Phase _phase;
-		private static string _at;              // the stop the BTR is at, or is on its way to, in the plan
-		private static readonly Queue<string> _plan = new Queue<string>();   // the stops still to drive to, in order
 
-		// a drive over more than one road that is not a call: a paid ride (the driver's "take me to") with you aboard, or the BTR's first leg to a
-		// random stop. The stops still to drive to, in order.
-		private static BTRVehicle _rideVehicle;
-		private static string _rideAt;
-		private static bool _ridePaid;
-		private static readonly Queue<string> _ridePlan = new Queue<string>();
-
-		internal static void Notify(string message)
+		private static void Notify(string message)
 		{
 			Plugin.Log.LogInfo("BTR signal: " + message);
 			NotificationManager.DisplayMessageNotification("BTR signal: " + message);
@@ -56,10 +44,18 @@ namespace CustomRpTweaks.Client.Patches
 		private static void Clear()
 		{
 			_vehicle = null;
-			_target = null;
-			_at = null;
-			_phase = Phase.None;
-			_plan.Clear();
+			_kind = Kind.None;
+			_arriveAt = null;
+			_then = null;
+		}
+
+		private static bool Joined(MapPathConfig map, string a, string b) => map.GetPathSplineByPoints(a, b) != null;
+
+		private static float Flat(Vector3 a, Vector3 b)
+		{
+			var d = a - b;
+			d.y = 0f;
+			return d.magnitude;
 		}
 
 		// ---- the call -------------------------------------------------------------------------------------------------------------------------
@@ -92,7 +88,6 @@ namespace CustomRpTweaks.Client.Patches
 				Notify("the BTR is not on the map.");
 				return;
 			}
-
 			var map = vehicle.MapPathConfig;
 			var route = vehicle.CurrentPathConfig;
 			if (map == null || route?.pathPoints == null || route.pathPoints.Count == 0)
@@ -100,15 +95,9 @@ namespace CustomRpTweaks.Client.Patches
 				Notify("the BTR has no route to call it on.");
 				return;
 			}
-
-			if (_target != null && ReferenceEquals(vehicle, _vehicle))
+			if (_kind != Kind.None && ReferenceEquals(vehicle, _vehicle))
 			{
-				Notify($"the BTR is already on its way to {_target}.");
-				return;
-			}
-			if (_rideVehicle != null && ReferenceEquals(vehicle, _rideVehicle))
-			{
-				Notify("the BTR is busy getting to its first stop, try again in a moment.");
+				Notify("the BTR is busy, try again in a moment.");
 				return;
 			}
 
@@ -116,7 +105,6 @@ namespace CustomRpTweaks.Client.Patches
 			var current = traverse.Field("_currentPathDestination").GetValue<PathDestination>();
 			var heading = traverse.Field("_targetPathDestination").GetValue<PathDestination>();
 			var paused = traverse.Field("_pauseOn").GetValue<bool>();
-
 			// where the BTR will be next: the stop it waits at, or the one it is driving to
 			var start = paused ? current : heading;
 			if (start == null)
@@ -125,17 +113,18 @@ namespace CustomRpTweaks.Client.Patches
 				return;
 			}
 
-			var graph = BuildGraph(map, route);
-			var parents = Search(graph, start.id);
-			var stops = parents.Keys.Select(id => map.GetPartPathByID(id) as PathDestination).Where(stop => stop != null).ToList();
+			// the stops it can go to from there: the one itself and every one with a road to it, never the entry or exit point (arriving at the exit sends the BTR away)
+			var stops = map.PathDestinations
+				.Where(stop => stop != null && stop.id != route.enterPoint && stop.id != route.exitPoint && (stop.id == start.id || Joined(map, start.id, stop.id)))
+				.OrderBy(stop => Flat(stop.transform.position, flarePosition))
+				.ToList();
 			if (Plugin.VerboseLogging.Value)
 			{
-				Plugin.Log.LogInfo($"BTR signal: splines of the map: {string.Join(", ", map.PathSplines.Where(sp => sp != null).Select(sp => sp.id))}");
-				Plugin.Log.LogInfo($"BTR signal: flare at {flarePosition:0}, route {route.id} {string.Join(",", route.pathPoints)}, BTR {(paused ? "waiting at" : "heading for")} {start.id}; stops it can reach: "
-					+ string.Join(", ", stops.Select(s => (s, d: Flat(s.transform.position, flarePosition))).OrderBy(x => x.d).Select(x => $"{x.s.id}{(route.pathPoints.Contains(x.s.id) ? "" : " (off route)")} {x.d:0} m")));
+				Plugin.Log.LogInfo($"BTR signal: flare at {flarePosition:0}, route {route.id} {string.Join(",", route.pathPoints)}, BTR {(paused ? "waiting at" : "heading for")} {start.id}; "
+					+ $"stops it can go to: {string.Join(", ", stops.Select(s => $"{s.id}{(route.pathPoints.Contains(s.id) ? "" : " (off route)")} {Flat(s.transform.position, flarePosition):0} m"))}");
 			}
 
-			var best = stops.OrderBy(stop => Flat(stop.transform.position, flarePosition)).FirstOrDefault();
+			var best = stops.FirstOrDefault();
 			if (best == null)
 			{
 				Notify("the BTR cannot reach any stop from here.");
@@ -154,21 +143,19 @@ namespace CustomRpTweaks.Client.Patches
 			}
 
 			_vehicle = vehicle;
-			_target = best.id;
+			_kind = Kind.Call;
 			_targetOnRoute = route.pathPoints.Contains(best.id);
-			_phase = Phase.Going;
-			_at = start.id;
-			_plan.Clear();
-			foreach (var id in PathTo(parents, best.id))
-			{
-				_plan.Enqueue(id);
-			}
-			Notify($"the BTR will stop at {best.id}{(_targetOnRoute ? "" : " (off its route)")}, {distance:0} m from the flare{(_plan.Count > 0 ? ", via " + string.Join(", ", _plan.Where(id => id != best.id)) : "")}.".Replace(", via .", "."));
+			Notify($"the BTR will stop at {best.id}{(_targetOnRoute ? "" : " (off its route)")}, {distance:0} m from the flare.");
 
-			// waiting at a stop already: leave at once
-			if (paused)
+			if (paused && !Hop(vehicle, start.id, best.id, keepPause: false))
 			{
-				ContinuePlan(vehicle, start, false);
+				Clear();
+			}
+			else if (!paused)
+			{
+				// finish the segment, then go on from the stop it is driving to
+				_arriveAt = start.id;
+				_then = best.id == start.id ? null : best.id;
 			}
 		}
 
@@ -176,34 +163,40 @@ namespace CustomRpTweaks.Client.Patches
 
 		internal static void OnStopReached(VehicleBase vehicle, PathDestination stop)
 		{
-			if (_rideVehicle != null)
-			{
-				ContinueRide(vehicle, stop);
-				return;
-			}
-			if (_target == null)
+			if (_kind == Kind.None)
 			{
 				return;
 			}
-			if (!ReferenceEquals(vehicle, _vehicle) || stop.id != _at)
+			if (!ReferenceEquals(vehicle, _vehicle) || stop.id != _arriveAt)
 			{
-				Plugin.Log.LogWarning($"BTR signal: the BTR reached {stop.id}, expected {_at}; the call is dropped.");
+				Plugin.Log.LogWarning($"BTR signal: the BTR reached {stop.id}, expected {_arriveAt}; dropped.");
 				Clear();
 				return;
 			}
 
-			if (_plan.Count > 0)
+			// a stop on the way: straight on
+			if (_then != null)
 			{
-				ContinuePlan(vehicle, stop, false);
+				var next = _then;
+				_then = null;
+				if (!Hop((BTRVehicle)vehicle, stop.id, next, keepPause: false))
+				{
+					Clear();
+				}
 				return;
 			}
 
-			if (_phase == Phase.Returning)
+			switch (_kind)
 			{
-				Notify($"the BTR is back on its route at {stop.id}.");
-				ShortPause(vehicle, PassThroughWait);
-				Clear();
-				return;
+				case Kind.FirstLeg:
+					Clear();
+					return;
+
+				case Kind.Return:
+					Notify($"the BTR is back on its route at {stop.id}.");
+					ShortPause(vehicle, 1f);
+					Clear();
+					return;
 			}
 
 			// reached the stop it was called to
@@ -214,136 +207,49 @@ namespace CustomRpTweaks.Client.Patches
 				return;
 			}
 
-			// off its route: wait the normal pause here, then drive back to the nearest route stop
+			// off its route: wait the normal pause here, then drive back to the nearest route stop it has a road to
 			var map = ((BTRVehicle)vehicle).MapPathConfig;
-			var route = vehicle.CurrentPathConfig;
-			var parents = Search(BuildGraph(map, route), stop.id);
-			var back = route.pathPoints.Distinct()
-				.Where(id => parents.ContainsKey(id))
+			var back = vehicle.CurrentPathConfig.pathPoints.Distinct()
 				.Select(id => map.GetPartPathByID(id) as PathDestination)
-				.Where(s => s != null)
-				.OrderBy(s => Flat(s.transform.position, stop.transform.position))
+				.Where(route => route != null && Joined(map, stop.id, route.id))
+				.OrderBy(route => Flat(route.transform.position, stop.transform.position))
 				.FirstOrDefault();
-			if (back == null)
+			if (back == null || !Hop((BTRVehicle)vehicle, stop.id, back.id, keepPause: true))
 			{
 				Plugin.Log.LogWarning($"BTR signal: no route stop to drive back to from {stop.id}.");
 				Clear();
 				return;
 			}
-			_phase = Phase.Returning;
-			_plan.Clear();
-			foreach (var id in PathTo(parents, back.id))
-			{
-				_plan.Enqueue(id);
-			}
+			_kind = Kind.Return;
 			Plugin.Log.LogInfo($"BTR signal: after the wait the BTR drives back to {back.id}.");
-			ContinuePlan(vehicle, stop, true);
 		}
 
-		// Drives on to the next stop of the plan from the stop the BTR is at now
-		private static void ContinuePlan(VehicleBase vehicle, PathDestination from, bool keepPause)
+		// Drives from the stop the BTR is at to the next one with the game's "take me to" call. That call also cuts the pause to its last seconds: for a
+		// stop passed on the way it is made a second; where the BTR is to wait its normal pause it is put back.
+		private static bool Hop(BTRVehicle vehicle, string from, string to, bool keepPause)
 		{
-			var next = _plan.Dequeue();
-			var map = ((BTRVehicle)vehicle).MapPathConfig;
-			if (map.GetPathSplineByPoints(from.id, next) == null)
+			if (!Joined(vehicle.MapPathConfig, from, to))
 			{
-				Plugin.Log.LogWarning($"BTR signal: no spline from {from.id} to {next}; the call is dropped.");
-				Clear();
-				return;
+				Plugin.Log.LogWarning($"BTR signal: no road from {from} to {to}; dropped.");
+				return false;
 			}
 
 			var traverse = Traverse.Create(vehicle);
 			var elapsed = traverse.Field("_tempPauseDuration").GetValue<float>();
 			var total = traverse.Field("_pauseDuration").GetValue<float>();
-			vehicle.MoveToDestination(next);   // also cuts the pause to its last seconds
+			vehicle.MoveToDestination(to);
 			if (keepPause)
 			{
-				// the BTR waits the whole pause here
 				traverse.Field("_tempPauseDuration").SetValue(elapsed);
 				vehicle.timeToEndPause = total - elapsed;
 			}
 			else
 			{
-				ShortPause(vehicle, PassThroughWait);
+				ShortPause(vehicle, 1f);
 			}
-			_at = next;
-			Plugin.Verbose($"BTR signal: {from.id} -> {next}{(keepPause ? " after the normal wait" : "")}.");
-		}
-
-		// ---- a paid ride over more than one road ------------------------------------------------------------------------------------------------
-
-		// The driver's "take me to" asks the BTR to drive one spline from the stop it is at to the destination. When no spline joins them (typically from
-		// an off-route stop, where nothing in the route leads on) the game would fail, so the way is found on the graph of stops instead: the first stop
-		// replaces the destination in the game's call, and the rest is driven stop by stop with you aboard. Returns false to refuse the purchase.
-		internal static bool PlanRide(BtrController controller, ref string idPathDestination)
-		{
-			var vehicle = controller.BtrVehicle;
-			var parts = idPathDestination?.Split('/');
-			if (vehicle == null || parts == null || parts.Length < 2)
-			{
-				return true;
-			}
-			var current = Traverse.Create(vehicle).Field("_currentPathDestination").GetValue<PathDestination>();
-			var map = vehicle.MapPathConfig;
-			var destination = parts[1];
-			if (current == null || map == null || current.id == destination || map.GetPathSplineByPoints(current.id, destination) != null)
-			{
-				return true;
-			}
-
-			var parents = Search(BuildGraph(map, vehicle.CurrentPathConfig), current.id);
-			if (!parents.ContainsKey(destination))
-			{
-				Notify($"there is no road from {current.id} to {destination}.");
-				return false;
-			}
-
-			var path = PathTo(parents, destination);
-			Clear();   // a call or a drive back that was waiting is replaced by the ride
-			_ridePlan.Clear();
-			foreach (var id in path.Skip(1))
-			{
-				_ridePlan.Enqueue(id);
-			}
-			_rideVehicle = vehicle;
-			_rideAt = path[0];
-			_ridePaid = true;
-			idPathDestination = parts[0] + "/" + path[0];
-			Notify($"the BTR takes you to {destination} via {string.Join(", ", path.Take(path.Count - 1))}.".Replace(" via .", "."));
+			_arriveAt = to;
+			Plugin.Verbose($"BTR signal: {from} -> {to}{(keepPause ? " after the normal wait" : "")}.");
 			return true;
-		}
-
-		// The BTR reached a stop of the ride: on to the next one with you still aboard (the game resets "paid" at every stop and puts passengers off
-		// when it leaves an unpaid one), or, at the destination, back to normal
-		private static void ContinueRide(VehicleBase vehicle, PathDestination stop)
-		{
-			if (!ReferenceEquals(vehicle, _rideVehicle) || stop.id != _rideAt)
-			{
-				Plugin.Log.LogWarning($"BTR signal: the ride reached {stop.id}, expected {_rideAt}; dropped.");
-				_rideVehicle = null;
-				_ridePlan.Clear();
-				return;
-			}
-			if (_ridePlan.Count == 0)
-			{
-				_rideVehicle = null;
-				return;
-			}
-
-			var next = _ridePlan.Dequeue();
-			var map = ((BTRVehicle)vehicle).MapPathConfig;
-			if (map.GetPathSplineByPoints(stop.id, next) == null)
-			{
-				Plugin.Log.LogWarning($"BTR signal: no spline from {stop.id} to {next}; the ride ends here.");
-				_rideVehicle = null;
-				_ridePlan.Clear();
-				return;
-			}
-			vehicle.IsPaid = _ridePaid;
-			vehicle.MoveToDestination(next);
-			ShortPause(vehicle, PassThroughWait);
-			_rideAt = next;
-			Plugin.Verbose($"BTR signal: ride {stop.id} -> {next}.");
 		}
 
 		// The pause at the current stop ends in this many seconds
@@ -358,7 +264,8 @@ namespace CustomRpTweaks.Client.Patches
 		// ---- the BTR's first leg -----------------------------------------------------------------------------------------------------------------
 
 		// Called right after the game put the BTR on its entry point and sent it to the route's first stop: sends it to a random stop of the route instead,
-		// over the stops between, and the route goes on from there. The first stop is only waited at for the normal pause.
+		// and the route goes on from there. An entry point has a road to one stop only (on Woods p10 to p5), so the BTR passes that stop first, a second
+		// there, unless it is the one chosen.
 		internal static void StartAtRandomStop(VehicleBase vehicle)
 		{
 			var btr = vehicle as BTRVehicle;
@@ -370,41 +277,44 @@ namespace CustomRpTweaks.Client.Patches
 				return;
 			}
 
-			var parents = Search(BuildGraph(map, route, keepEntry: true), entry.id);
-			var stops = route.pathPoints.Distinct().Where(id => id != entry.id && parents.ContainsKey(id)).ToList();
-			if (stops.Count == 0)
+			var chosen = route.pathPoints[Random.Range(0, route.pathPoints.Count)];
+			string first;   // the stop to drive to now
+			if (chosen == route.pathPoints[0] && Joined(map, entry.id, chosen))
 			{
-				Plugin.Verbose("BTR first stop: no stop of the route can be reached from the entry point, the BTR goes to its first stop.");
+				Plugin.Log.LogInfo($"BTR first stop: {chosen}, the route's own first stop.");
 				return;
 			}
-
-			var target = stops[Random.Range(0, stops.Count)];
-			var path = PathTo(parents, target);
-			if (path.Count == 1 && path[0] == route.pathPoints[0])
+			if (Joined(map, entry.id, chosen))
 			{
-				Plugin.Log.LogInfo($"BTR first stop: {target}, the route's own first stop.");
+				first = chosen;
+			}
+			else
+			{
+				first = map.PathDestinations.Where(stop => stop != null && stop.id != entry.id && Joined(map, entry.id, stop.id) && Joined(map, stop.id, chosen)).Select(stop => stop.id).FirstOrDefault();
+				if (first == null)
+				{
+					Plugin.Verbose($"BTR first stop: no road from the entry point {entry.id} to {chosen} or to a stop that has one, the BTR goes to its first stop.");
+					return;
+				}
+			}
+
+			_vehicle = btr;
+			_kind = Kind.FirstLeg;
+			_then = first == chosen ? null : chosen;
+			if (!Hop(btr, entry.id, first, keepPause: false))
+			{
+				Clear();
 				return;
 			}
-
-			_rideVehicle = btr;
-			_ridePaid = false;
-			_ridePlan.Clear();
-			foreach (var id in path.Skip(1))
-			{
-				_ridePlan.Enqueue(id);
-			}
-			_rideAt = path[0];
-			btr.MoveToDestination(path[0]);
 			btr.BtrState = EBtrState.Running;
-			Plugin.Log.LogInfo($"BTR first stop: {target} (route {route.id}: {string.Join(",", route.pathPoints)}), from the entry point {entry.id} via {string.Join(", ", path)}.");
+			Plugin.Log.LogInfo($"BTR first stop: {chosen} (route {route.id}: {string.Join(",", route.pathPoints)}), from the entry point {entry.id}{(first == chosen ? "" : " via " + first)}.");
 		}
 
 		// ---- checks on the route the game picked ---------------------------------------------------------------------------------------------------
 
-		internal static bool Joined(MapPathConfig map, string a, string b) => map.GetPathSplineByPoints(a, b) != null;
+		internal static bool RoadFrom(MapPathConfig map, string stop) => map.PathDestinations.Any(other => other != null && other.id != stop && Joined(map, stop, other.id));
 
-		// The entry point has a road to some stop of the map
-		internal static bool HasRoad(MapPathConfig map, string stop) => map.PathDestinations.Any(other => other != null && other.id != stop && Joined(map, stop, other.id));
+		internal static bool RoadBetween(MapPathConfig map, string a, string b) => Joined(map, a, b);
 
 		// Each stop of the route joined to the next by road, and for a circle the last to the first (that is how the game starts the next lap). The BTR comes
 		// in from the entry point by road to the first stop, or with a random first stop from wherever the entry point has a road. The exit point is not
@@ -423,7 +333,7 @@ namespace CustomRpTweaks.Client.Patches
 			{
 				return false;
 			}
-			return Plugin.BtrRandomStart.Value ? HasRoad(map, route.enterPoint) : Joined(map, route.enterPoint, stops[0]);
+			return Plugin.BtrRandomStart.Value ? RoadFrom(map, route.enterPoint) : Joined(map, route.enterPoint, stops[0]);
 		}
 
 		internal static void DumpMap(MapPathConfig map, PathConfig route)
@@ -431,87 +341,6 @@ namespace CustomRpTweaks.Client.Patches
 			Plugin.Log.LogInfo($"BTR map: route {route.id} {route.enterPoint} > {string.Join(",", route.pathPoints)} > {route.exitPoint} (circle {route.circle}, once {route.once}, laps {route.circleCount}); "
 				+ $"stops {string.Join(" ", map.PathDestinations.Where(d => d != null).Select(d => $"{d.id}@{d.transform.position:0}"))}; "
 				+ $"roads {string.Join(" ", map.PathSplines.Where(sp => sp != null).Select(sp => sp.id))}");
-		}
-
-		// ---- the graph of stops ---------------------------------------------------------------------------------------------------------------
-
-		// Stops of the map joined by a spline (spline ids are "s_<stop>_<stop>"); the route's entry and exit points are left out: arriving at the exit point sends the BTR away
-		private static Dictionary<string, List<string>> BuildGraph(MapPathConfig map, PathConfig route, bool keepEntry = false)
-		{
-			var stopIds = new HashSet<string>(map.PathDestinations.Where(stop => stop != null).Select(stop => stop.id));
-			var graph = new Dictionary<string, List<string>>();
-			void Join(string from, string to)
-			{
-				if (!graph.TryGetValue(from, out var list))
-				{
-					graph[from] = list = new List<string>();
-				}
-				if (!list.Contains(to))
-				{
-					list.Add(to);
-				}
-			}
-			foreach (var spline in map.PathSplines)
-			{
-				var parts = spline?.id?.Split('_');
-				if (parts == null || parts.Length < 3)
-				{
-					continue;
-				}
-				string a = parts[1], b = parts[2];
-				var leftOut = new[] { a, b }.Any(id => (id == route.exitPoint || id == route.enterPoint) && !(keepEntry && id == route.enterPoint));
-				if (!stopIds.Contains(a) || !stopIds.Contains(b) || leftOut)
-				{
-					continue;
-				}
-				Join(a, b);
-				Join(b, a);
-			}
-			return graph;
-		}
-
-		// Breadth first from one stop: every stop reachable, with the stop before it on the shortest way
-		private static Dictionary<string, string> Search(Dictionary<string, List<string>> graph, string from)
-		{
-			var parents = new Dictionary<string, string> { [from] = null };
-			var queue = new Queue<string>();
-			queue.Enqueue(from);
-			while (queue.Count > 0)
-			{
-				var id = queue.Dequeue();
-				if (!graph.TryGetValue(id, out var neighbours))
-				{
-					continue;
-				}
-				foreach (var next in neighbours)
-				{
-					if (!parents.ContainsKey(next))
-					{
-						parents[next] = id;
-						queue.Enqueue(next);
-					}
-				}
-			}
-			return parents;
-		}
-
-		// The stops to drive to, in order, without the one it starts at
-		private static List<string> PathTo(Dictionary<string, string> parents, string to)
-		{
-			var path = new List<string>();
-			for (var id = to; id != null && parents[id] != null; id = parents[id])
-			{
-				path.Add(id);
-			}
-			path.Reverse();
-			return path;
-		}
-
-		private static float Flat(Vector3 a, Vector3 b)
-		{
-			var d = a - b;
-			d.y = 0f;
-			return d.magnitude;
 		}
 	}
 
@@ -551,26 +380,6 @@ namespace CustomRpTweaks.Client.Patches
 			catch (System.Exception e)
 			{
 				Plugin.Log.LogError("BTR signal (stop) failed: " + e);
-			}
-		}
-	}
-
-	// The driver's "take me to": see BtrCall.PlanRide
-	internal class BtrRidePatch : ModulePatch
-	{
-		protected override MethodBase GetTargetMethod() => typeof(BtrController).GetMethod(nameof(BtrController.MoveToDestination), BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly);
-
-		[PatchPrefix]
-		private static bool Prefix(BtrController __instance, ref string idPathDestination)
-		{
-			try
-			{
-				return BtrCall.PlanRide(__instance, ref idPathDestination);
-			}
-			catch (System.Exception e)
-			{
-				Plugin.Log.LogError("BTR ride failed: " + e);
-				return true;
 			}
 		}
 	}
@@ -655,7 +464,7 @@ namespace CustomRpTweaks.Client.Patches
 				.Select(r => r.enterPoint)
 				.Concat(new[] { route.enterPoint })
 				.Distinct()
-				.Where(entry => Plugin.BtrRandomStart.Value ? BtrCall.HasRoad(map, entry) : BtrCall.Joined(map, entry, first))
+				.Where(entry => Plugin.BtrRandomStart.Value ? BtrCall.RoadFrom(map, entry) : BtrCall.RoadBetween(map, entry, first))
 				.ToList();
 			if (options.Count == 0)
 			{
