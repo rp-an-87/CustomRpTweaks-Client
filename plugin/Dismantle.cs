@@ -109,8 +109,8 @@ namespace CustomRpTweaks.Client
 			_running = true;
 			try
 			{
-				var targets = Targets(controller, item);
-				if (targets.Count == 0)
+				var targets = LazyTargets(controller, item);
+				if (!targets.Any())
 				{
 					Plugin.Verbose($"Dismantle: {NameOf(item)} ({item.GetType().Name}): no container to put the parts in");
 					NotificationManager.DisplayMessageNotification($"Dismantle: no container to put the parts of {NameOf(item)} in.");
@@ -233,7 +233,7 @@ namespace CustomRpTweaks.Client
 			public readonly List<Item> Unknown = new List<Item>();
 		}
 
-		private static async Task<bool> TakeOff(InventoryController controller, Item part, List<CompoundItem> targets, Tally tally)
+		private static async Task<bool> TakeOff(InventoryController controller, Item part, IEnumerable<CompoundItem> targets, Tally tally)
 		{
 			if (part.PinLockState == EItemPinLockState.Locked)
 			{
@@ -343,6 +343,51 @@ namespace CustomRpTweaks.Client
 		// of a split.
 		internal static List<CompoundItem> Targets(InventoryController controller, Item item) => TargetsInOrder(controller, item).ToList();
 
+		// The same places, handed out as they are asked for and remembered, so the scene search for open inventories is only paid when the
+		// containers before it have no room, and a caller can go through the list once per part without redoing it. The state it depends on
+		// (where the item lies now) is read right here, not later.
+		internal static IEnumerable<CompoundItem> LazyTargets(InventoryController controller, Item item) => new LazyList(TargetsInOrder(controller, item));
+
+		private sealed class LazyList : IEnumerable<CompoundItem>
+		{
+			private readonly List<CompoundItem> _items = new List<CompoundItem>();
+			private readonly IEnumerator<CompoundItem> _source;
+			private bool _done;
+
+			public LazyList(IEnumerable<CompoundItem> source)
+			{
+				_source = source.GetEnumerator();
+				Pull();
+			}
+
+			private bool Pull()
+			{
+				if (_done)
+				{
+					return false;
+				}
+
+				if (_source.MoveNext())
+				{
+					_items.Add(_source.Current);
+					return true;
+				}
+
+				_done = true;
+				return false;
+			}
+
+			public IEnumerator<CompoundItem> GetEnumerator()
+			{
+				for (var index = 0; index < _items.Count || Pull(); index++)
+				{
+					yield return _items[index];
+				}
+			}
+
+			System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+		}
+
 		// The same list, worked out one tier at a time as it is read: a caller that stops at the first container with room (a split into the
 		// container the stack lies in) never pays for the later tiers, the scene search for open inventories among them
 		internal static IEnumerable<CompoundItem> TargetsInOrder(InventoryController controller, Item item)
@@ -351,16 +396,14 @@ namespace CustomRpTweaks.Client
 			bool Fresh(CompoundItem container) =>
 				container != null && container.Grids != null && container.Grids.Length > 0 && !(container == item || IsInside(container, item)) && seen.Add(container);
 
-			// The first ancestor (or the item itself) that lies in a grid
+			// Worked out before the first container is handed out, so that a caller that moves the item meanwhile (a part taken off) still gets
+			// the places of where it was
+			CompoundItem own = null;
 			for (var current = item; current != null; current = HolderOf(current))
 			{
 				if (current.Parent?.Container is Grid grid)
 				{
-					if (Fresh(grid.ParentItem))
-					{
-						yield return grid.ParentItem;
-					}
-
+					own = grid.ParentItem;
 					break;
 				}
 			}
@@ -370,6 +413,12 @@ namespace CustomRpTweaks.Client
 			for (var depth = 0; depth < 64 && HolderOf(top) != null; depth++)
 			{
 				top = HolderOf(top);
+			}
+
+			// The container the item lies in comes first
+			if (Fresh(own))
+			{
+				yield return own;
 			}
 
 			if (top is InventoryEquipment equipment)

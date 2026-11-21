@@ -54,11 +54,12 @@ namespace CustomRpTweaks.Client
 					return;
 				}
 
-				var targets = Dismantle.Targets(controller, weapon);
+				var targets = Dismantle.LazyTargets(controller, weapon);
 				var stash = controller.Inventory.Stash;
-				if (!InGameStatus.InRaid && stash != null && !targets.Contains(stash))
+				if (!InGameStatus.InRaid && stash != null)
 				{
-					targets.Add(stash);
+					// A second visit to the stash (when it was already in the list) finds no room again, which is harmless
+					targets = targets.Concat(new[] { (CompoundItem)stash });
 				}
 
 				foreach (var round in rounds)
@@ -93,7 +94,7 @@ namespace CustomRpTweaks.Client
 		}
 
 		// The first free place in the targets, in order; a rule of the game that refuses the move stops it (it holds for every place)
-		private static async Task<Placed> Place(InventoryController controller, Ammo round, System.Collections.Generic.List<CompoundItem> targets)
+		private static async Task<Placed> Place(InventoryController controller, Ammo round, System.Collections.Generic.IEnumerable<CompoundItem> targets)
 		{
 			foreach (var target in targets)
 			{

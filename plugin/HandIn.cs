@@ -201,7 +201,7 @@ namespace CustomRpTweaks.Client
 			var template = item.TemplateId;
 			var before = new HashSet<string>(controller.Inventory.GetPlayerItems(EPlayerItems.AllExceptHideoutStashes).Where(other => other.TemplateId == template).Select(other => other.Id.ToString()));
 			string refusal = null;
-			foreach (var target in Dismantle.Targets(controller, item))
+			foreach (var target in Dismantle.TargetsInOrder(controller, item))
 			{
 				foreach (var grid in target.Grids)
 				{

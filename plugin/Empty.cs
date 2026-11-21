@@ -81,8 +81,8 @@ namespace CustomRpTweaks.Client
 					return;
 				}
 
-				var targets = Dismantle.Targets(controller, item);
-				if (targets.Count == 0)
+				var targets = Dismantle.LazyTargets(controller, item);
+				if (!targets.Any())
 				{
 					Plugin.Verbose($"Empty: {Dismantle.NameOf(item)}: no container to put the contents in");
 					NotificationManager.DisplayMessageNotification($"Empty: no container to put the contents of {Dismantle.NameOf(item)} in.");
@@ -121,7 +121,7 @@ namespace CustomRpTweaks.Client
 			public string FirstRefusal;
 		}
 
-		private static async Task MoveOut(InventoryController controller, Item thing, List<CompoundItem> targets, Tally tally)
+		private static async Task MoveOut(InventoryController controller, Item thing, IEnumerable<CompoundItem> targets, Tally tally)
 		{
 			if (thing.PinLockState == EItemPinLockState.Locked)
 			{
