@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using CustomRpTweaks.Client.Patches;
 using EFT.InventoryLogic;
 using EFT.UI;
@@ -195,29 +196,68 @@ namespace CustomRpTweaks.Client
 		{
 			Label(parent, title, 1f, Text, bold: true);
 			Label(parent, what, 0.8f, Dim, wrap: true);
-			var line = Node("Slider Row", parent);
-			var group = line.gameObject.AddComponent<HorizontalLayoutGroup>();
-			group.spacing = 12f;
-			group.childAlignment = TextAnchor.MiddleLeft;
-			group.childControlWidth = true;
-			group.childControlHeight = true;
-			group.childForceExpandWidth = false;
-			group.childForceExpandHeight = false;
-			Size(line, height: _unit * 1.8f, flexWidth: 1f);
-
-			var value = Label(line, "", 0.9f, Text, align: TextAlignmentOptions.Right);
-			Size(value, width: _unit * 7.5f);
-			value.transform.SetAsLastSibling();
-
-			int start = Mathf.Clamp(get(), 0, maxRows);
-			var slider = MakeSlider(line, maxRows, start, color, number =>
+			var value = Label(parent, Describe(Mathf.Clamp(get(), 0, maxRows)), 0.85f, color, align: TextAlignmentOptions.Left);
+			Action<int> apply = number =>
 			{
 				set(number);
 				value.text = Describe(number);
 				StashSortOverlayPatch.Refresh();
-			});
-			value.text = Describe(start);
-			slider.transform.SetAsFirstSibling();
+			};
+
+			int start = Mathf.Clamp(get(), 0, maxRows);
+			if (!GameSlider(parent, maxRows, start, apply))
+			{
+				var line = Node("Slider Row", parent);
+				Size(line, height: _unit * 1.8f, flexWidth: 1f);
+				var own = MakeSlider(line, maxRows, start, color, number => apply(number));
+				Stretch((RectTransform)own.transform, 0f, 0f, 0f, 0f);
+			}
+		}
+
+		private static NumberSlider _sliderTemplate;
+		private static UpdatableToggle _toggleTemplate;
+
+		// The templates are the controls of the game's settings screen (a prefab asset when there is one, so no state of a screen that used it)
+		private static T Template<T>() where T : Component
+		{
+			var found = Resources.FindObjectsOfTypeAll<T>();
+			return found.FirstOrDefault(part => part != null && !part.gameObject.scene.IsValid()) ?? found.FirstOrDefault(part => part != null);
+		}
+
+		// A copy of the settings screen's number slider (the slider with the value box), whole numbers from 0. False when the game has none here.
+		private static bool GameSlider(Transform parent, int max, int start, Action<int> changed)
+		{
+			try
+			{
+				_sliderTemplate = _sliderTemplate != null ? _sliderTemplate : Template<NumberSlider>();
+				if (_sliderTemplate == null)
+				{
+					return false;
+				}
+
+				var template = (RectTransform)_sliderTemplate.transform;
+				float height = Mathf.Max(template.rect.height, template.sizeDelta.y, _unit * 2f);
+				var holder = Node("Slider Holder", parent);
+				Size(holder, height: height, flexWidth: 1f);
+				var copy = UnityEngine.Object.Instantiate(_sliderTemplate.gameObject, holder, false);
+				copy.name = "Number Slider";
+				copy.SetActive(true);
+				var rect = (RectTransform)copy.transform;
+				rect.anchorMin = Vector2.zero;
+				rect.anchorMax = Vector2.one;
+				rect.offsetMin = rect.offsetMax = Vector2.zero;
+				var slider = copy.GetComponent<NumberSlider>();
+				slider._slider.wholeNumbers = true;
+				slider.Show(0f, Mathf.Max(1, max), "0");
+				slider.UpdateValue(start, true, 0f, Mathf.Max(1, max));
+				slider.Bind(value => changed((int)Mathf.Round(value)));
+				return true;
+			}
+			catch (Exception e)
+			{
+				Plugin.Log.LogWarning($"Stash sort window: the game's slider could not be copied, drawing one: {e.Message}");
+				return false;
+			}
 		}
 
 		private static string Describe(int rows) => rows <= 0 ? "Off" : rows == 1 ? "1 row (0)" : $"{rows} rows (0-{rows - 1})";
@@ -265,6 +305,36 @@ namespace CustomRpTweaks.Client
 			return slider;
 		}
 
+		// A copy of the settings screen's tick box. False when the game has none here.
+		private static bool GameToggle(RectTransform box, bool on, Action<bool> changed)
+		{
+			try
+			{
+				_toggleTemplate = _toggleTemplate != null ? _toggleTemplate : Template<UpdatableToggle>();
+				if (_toggleTemplate == null)
+				{
+					return false;
+				}
+
+				var copy = UnityEngine.Object.Instantiate(_toggleTemplate.gameObject, box, false);
+				copy.name = "Tick Box";
+				copy.SetActive(true);
+				var rect = (RectTransform)copy.transform;
+				rect.anchorMin = Vector2.zero;
+				rect.anchorMax = Vector2.one;
+				rect.offsetMin = rect.offsetMax = Vector2.zero;
+				var toggle = copy.GetComponent<UpdatableToggle>();
+				toggle.UpdateValue(on, false);
+				toggle.Bind(changed);
+				return true;
+			}
+			catch (Exception e)
+			{
+				Plugin.Log.LogWarning($"Stash sort window: the game's tick box could not be copied, drawing one: {e.Message}");
+				return false;
+			}
+		}
+
 		private static void Check(Transform parent, string title, string what, bool on, Action<bool> changed)
 		{
 			var line = Node("Check Row", parent);
@@ -277,23 +347,26 @@ namespace CustomRpTweaks.Client
 			group.childForceExpandHeight = false;
 
 			var box = Node("Box", line);
-			Size(box, _unit * 1.4f, _unit * 1.4f).minWidth = _unit * 1.4f;
-			var boxImage = box.gameObject.AddComponent<Image>();
-			boxImage.color = new Color(0.4f, 0.41f, 0.39f);
-			var inside = Node("Inside", box);
-			Stretch(inside, 1f, 1f, 1f, 1f);
-			var insideImage = inside.gameObject.AddComponent<Image>();
-			insideImage.color = Track;
-			var mark = Node("Mark", inside);
-			Stretch(mark, 4f, 4f, 4f, 4f);
-			var markImage = mark.gameObject.AddComponent<Image>();
-			markImage.color = new Color(0.55f, 0.8f, 0.4f);
-			var toggle = box.gameObject.AddComponent<Toggle>();
-			toggle.targetGraphic = boxImage;
-			toggle.graphic = markImage;
-			toggle.SetIsOnWithoutNotify(on);
-			markImage.enabled = on;
-			toggle.onValueChanged.AddListener(state => changed(state));
+			Size(box, _unit * 1.6f, _unit * 1.6f).minWidth = _unit * 1.6f;
+			if (!GameToggle(box, on, changed))
+			{
+				var boxImage = box.gameObject.AddComponent<Image>();
+				boxImage.color = new Color(0.4f, 0.41f, 0.39f);
+				var inside = Node("Inside", box);
+				Stretch(inside, 1f, 1f, 1f, 1f);
+				var insideImage = inside.gameObject.AddComponent<Image>();
+				insideImage.color = Track;
+				var mark = Node("Mark", inside);
+				Stretch(mark, 4f, 4f, 4f, 4f);
+				var markImage = mark.gameObject.AddComponent<Image>();
+				markImage.color = new Color(0.55f, 0.8f, 0.4f);
+				var toggle = box.gameObject.AddComponent<Toggle>();
+				toggle.targetGraphic = boxImage;
+				toggle.graphic = markImage;
+				toggle.SetIsOnWithoutNotify(on);
+				markImage.enabled = on;
+				toggle.onValueChanged.AddListener(state => changed(state));
+			}
 
 			var texts = Node("Texts", line);
 			var stack = texts.gameObject.AddComponent<VerticalLayoutGroup>();
