@@ -95,7 +95,7 @@ namespace CustomRpTweaks.Client
 				}
 
 				if (conditions.Any(entry => !candidate.IsConditionDone(entry) && (entry is ConditionHandoverItem handover && handover.target.Contains(item.StringTemplateId)
-					|| entry is ConditionWeaponAssembly assembly && item is Weapon weapon && Inventory.IsWeaponFitsCondition(weapon, assembly))))
+					|| entry is ConditionWeaponAssembly assembly && assembly.target.Contains(item.StringTemplateId))))
 				{
 					names.Add(candidate.Template.Name.Localized());
 				}
@@ -131,8 +131,8 @@ namespace CustomRpTweaks.Client
 
 					if (handover is ConditionWeaponAssembly assembly)
 					{
-						// Gunsmith: the weapon as built must fit every limit of the task (the game's own test)
-						if (!(item is Weapon weapon) || !Inventory.IsWeaponFitsCondition(weapon, assembly))
+						// Gunsmith: the task's own weapon, as built, within every limit (the game's own filter: template, vital parts, specs)
+						if (!(item is Weapon weapon) || Inventory.GetWeaponAssembly(new Item[] { weapon }, assembly).Count == 0)
 						{
 							continue;
 						}
