@@ -4,6 +4,7 @@ using CustomRpTweaks.Client.Patches;
 using EFT.InventoryLogic;
 using EFT.UI;
 using EFT.UI.Builds;
+using EFT.UI.DragAndDrop;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -130,6 +131,8 @@ namespace CustomRpTweaks.Client
 			float top = Mathf.Max(captionHeight, 30f);
 			var root = Node("Stash Sort Root", frame);
 			root.gameObject.AddComponent<LayoutElement>().ignoreLayout = true;
+			// Whatever a copied game control draws outside its place is cut off at the window
+			root.gameObject.AddComponent<RectMask2D>();
 			Stretch(root, 0f, 0f, 0f, top);
 			var column = root.gameObject.AddComponent<VerticalLayoutGroup>();
 			column.spacing = 6f;
@@ -162,19 +165,7 @@ namespace CustomRpTweaks.Client
 				Plugin.SortItemsReachingOut.Value, on => Plugin.SortItemsReachingOut.Value = on);
 
 			Gap(root, 6f);
-			Label(root, "Rows are counted from 0 at the top. 0 turns a rule off.", 0.75f, Dim, wrap: true);
-
-			var footer = Node("Footer", root);
-			var row = footer.gameObject.AddComponent<HorizontalLayoutGroup>();
-			row.childControlWidth = true;
-			row.childControlHeight = true;
-			row.childForceExpandWidth = false;
-			row.childForceExpandHeight = false;
-			row.childAlignment = TextAnchor.MiddleRight;
-			Size(footer, height: _unit * 2.2f, flexWidth: 1f);
-			var spacer = Node("Spacer", footer);
-			Size(spacer, flexWidth: 1f);
-			PushButton(footer, "Done", () => _window?.CloseAsync(), _unit * 7f, _unit * 2.2f);
+			Label(root, "Rows are counted from 0 at the top. 0 turns a rule off. Esc or the cross closes this window.", 0.75f, Dim, wrap: true);
 
 			LayoutRebuilder.ForceRebuildLayoutImmediate(root);
 			float width = Mathf.Min(_unit * 30f, ((RectTransform)frame.parent).rect.width * 0.9f);
@@ -214,6 +205,52 @@ namespace CustomRpTweaks.Client
 			}
 		}
 
+		// What a copied game control is made of, for the log (verbose logging), so its layout can be fixed from facts
+		private static void Dump(Transform part, string indent = "")
+		{
+			if (Plugin.VerboseLogging == null || !Plugin.VerboseLogging.Value)
+			{
+				return;
+			}
+
+			var rect = part as RectTransform;
+			var kinds = string.Join(",", part.GetComponents<Component>().Where(c => c != null && !(c is Transform)).Select(c => c.GetType().Name).ToArray());
+			Plugin.Verbose($"Stash sort window copy: {indent}{part.name} [{kinds}] size {(rect != null ? rect.rect.size.ToString() : "-")} active {part.gameObject.activeSelf}");
+			for (int i = 0; i < part.childCount; i++)
+			{
+				Dump(part.GetChild(i), indent + "  ");
+			}
+		}
+
+		// Esc closes the window and nothing else (the stash screens ask first, see StashSortEscape)
+		internal static bool ConsumeEscape()
+		{
+			if (_window == null)
+			{
+				return false;
+			}
+
+			_window.CloseAsync();
+			return true;
+		}
+
+		private static float _checkedAt;
+
+		// Leaving the stash screen closes the window too
+		internal static void Update()
+		{
+			if (_window == null || Time.unscaledTime - _checkedAt < 0.5f)
+			{
+				return;
+			}
+
+			_checkedAt = Time.unscaledTime;
+			if (UnityEngine.Object.FindObjectOfType<GridSortPanel>() == null)
+			{
+				_window.CloseAsync();
+			}
+		}
+
 		private static NumberSlider _sliderTemplate;
 		private static UpdatableToggle _toggleTemplate;
 
@@ -235,18 +272,44 @@ namespace CustomRpTweaks.Client
 					return false;
 				}
 
-				var template = (RectTransform)_sliderTemplate.transform;
-				float height = Mathf.Max(template.rect.height, template.sizeDelta.y, _unit * 2f);
-				var holder = Node("Slider Holder", parent);
-				Size(holder, height: height, flexWidth: 1f);
-				var copy = UnityEngine.Object.Instantiate(_sliderTemplate.gameObject, holder, false);
+				if (_sliderTemplate._slider == null || _sliderTemplate._valueInput == null)
+				{
+					return false;
+				}
+
+				// The game lays its slider out for a full settings row, so only the slider and its value box are taken from the copy and set
+				// in a row of our own; the rest of the copy (labels, backgrounds) goes
+				var row = Node("Slider Row", parent);
+				var group = row.gameObject.AddComponent<HorizontalLayoutGroup>();
+				group.spacing = 10f;
+				group.childAlignment = TextAnchor.MiddleLeft;
+				group.childControlWidth = true;
+				group.childControlHeight = true;
+				group.childForceExpandWidth = false;
+				group.childForceExpandHeight = false;
+				Size(row, height: _unit * 2f, flexWidth: 1f);
+				var copy = UnityEngine.Object.Instantiate(_sliderTemplate.gameObject, row, false);
 				copy.name = "Number Slider";
 				copy.SetActive(true);
-				var rect = (RectTransform)copy.transform;
-				rect.anchorMin = Vector2.zero;
-				rect.anchorMax = Vector2.one;
-				rect.offsetMin = rect.offsetMax = Vector2.zero;
 				var slider = copy.GetComponent<NumberSlider>();
+				Dump(copy.transform);
+				var track = (RectTransform)slider._slider.transform;
+				var box = (RectTransform)slider._valueInput.transform;
+				track.SetParent(row, false);
+				box.SetParent(row, false);
+				Size(track, height: _unit * 1.6f, flexWidth: 1f).minWidth = _unit * 6f;
+				Size(box, width: _unit * 4f, height: _unit * 1.8f);
+				copy.AddComponent<LayoutElement>().ignoreLayout = true;
+				foreach (var graphic in copy.GetComponents<Graphic>())
+				{
+					graphic.enabled = false;
+				}
+
+				for (int i = copy.transform.childCount - 1; i >= 0; i--)
+				{
+					UnityEngine.Object.Destroy(copy.transform.GetChild(i).gameObject);
+				}
+
 				slider._slider.wholeNumbers = true;
 				slider.Show(0f, Mathf.Max(1, max), "0");
 				slider.UpdateValue(start, true, 0f, Mathf.Max(1, max));
@@ -319,6 +382,14 @@ namespace CustomRpTweaks.Client
 				var copy = UnityEngine.Object.Instantiate(_toggleTemplate.gameObject, box, false);
 				copy.name = "Tick Box";
 				copy.SetActive(true);
+				Dump(copy.transform);
+				// The game's tick box carries its own caption: ours is beside it
+				foreach (var text in copy.GetComponentsInChildren<TMP_Text>(true))
+				{
+					UnityEngine.Object.Destroy(text.gameObject);
+				}
+
+				box.gameObject.AddComponent<RectMask2D>();
 				var rect = (RectTransform)copy.transform;
 				rect.anchorMin = Vector2.zero;
 				rect.anchorMax = Vector2.one;

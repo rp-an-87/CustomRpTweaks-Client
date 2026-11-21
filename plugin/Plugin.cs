@@ -130,6 +130,7 @@ namespace CustomRpTweaks.Client
 		private void Update()
 		{
 			LoadAmmoSkillSpeed.Update();
+			StashSortWindow.Update();
 			SprintStopLogPatch.Update();
 			Dismantle.Update();
 			Empty.Update();
@@ -481,6 +482,8 @@ namespace CustomRpTweaks.Client
 			new StashSortOverlayPatch().Enable();
 			new StashSortReservePatches.SortPatch().Enable();
 			new StashSortReservePatches.SortFilterPatch().Enable();
+			new StashSortEscape.InventoryScreenPatch().Enable();
+			new StashSortEscape.HideoutOverlayPatch().Enable();
 			new StashSortReservePatches.FindFreeSpacePatch().Enable();
 			new StashSortReservePatches.GetFreeLocationPatch().Enable();
 
