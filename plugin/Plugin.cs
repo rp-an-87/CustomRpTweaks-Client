@@ -89,6 +89,7 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<bool> BtrRandomStart;
 		internal static ConfigEntry<bool> BtrRandomEntry;
 		internal static ConfigEntry<bool> BtrRandomDirection;
+		internal static ConfigEntry<bool> BtrTraderCard;
 
 		internal static ConfigEntry<bool> ScaleLoadAmmoSpeed;
 		internal static ConfigEntry<float> LoadAmmoSpeedAtLevel0;
@@ -386,6 +387,11 @@ namespace CustomRpTweaks.Client
 				"Vanilla: the BTR always drives a route in the order it is listed. On = for routes that go round in a circle, half the raids the order is reversed (same stops, other direction). Applies when the raid starts.");
 			new BtrRoutePatch().Enable();
 			new BtrRandomStartPatch().Enable();
+
+			BtrTraderCard = Config.Bind("22. BTR", "13. Show the BTR driver in the trader list (locked)", true,
+				"The BTR driver has no card in the trading screen, so his standing cannot be seen. On = his card is added after the others, locked like Jaeger at the start of a game (the shop cannot be opened), with his standing. Takes effect the next time the trading screen opens."); 
+			new BtrTraderCardPatch().Enable();
+			new BtrTraderDetailsPatch().Enable();
 
 			BtrNotEnemyOfPmcs = Config.Bind("25. Bot hostility", "1. BTR is not an enemy of PMC bots", true,
 				"Vanilla makes every newly spawned bot an enemy of all groups of another side without checking the friendly lists, so PMC bots attack the BTR even though the server lists it as friendly. On = the BTR is skipped there when the group's friendly list says so (a PMC it really shoots can still turn on it). Off = vanilla. Applies to bots spawned after the change.");
