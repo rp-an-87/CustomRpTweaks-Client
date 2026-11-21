@@ -25,12 +25,11 @@ namespace CustomRpTweaks.Client.Patches
 				return;
 			}
 			var list = tradersList.ToList();
-			if (list.Any(trader => trader.Id == BtrCall.BtrTraderId))
-			{
-				return;
-			}
-			var btr = session.Traders.FirstOrDefault(trader => trader.Id == BtrCall.BtrTraderId);
-			if (btr != null)
+			var all = session.Traders.ToList();
+			var btr = all.FirstOrDefault(trader => trader.Id == BtrCall.BtrTraderId);
+			Plugin.Log.LogInfo($"BTR trader card: the trading screen lists {list.Count} traders ({string.Join(", ", list.Select(t => t.Settings.Nickname))}); the session has {all.Count}, the BTR driver among them: {btr != null}"
+				+ (btr != null ? $" (available in raid {btr.Settings.AvailableInRaid}, unlocked {btr.Info.Unlocked}, listed {list.Contains(btr)})" : ""));
+			if (btr != null && !list.Contains(btr))
 			{
 				list.Add(btr);
 				tradersList = list;
