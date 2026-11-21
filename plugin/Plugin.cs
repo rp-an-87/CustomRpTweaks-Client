@@ -86,7 +86,9 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<bool> BtrFlareCall;
 		internal static ConfigEntry<float> BtrFlareMinStanding;
 		internal static ConfigEntry<float> BtrFlareMaxDistance;
-		internal static ConfigEntry<bool> BtrFlareSkipStops;
+		internal static ConfigEntry<bool> BtrRandomStart;
+		internal static ConfigEntry<float> BtrRandomStartMinDistance;
+		internal static ConfigEntry<bool> BtrRandomDirection;
 
 		internal static ConfigEntry<bool> ScaleLoadAmmoSpeed;
 		internal static ConfigEntry<float> LoadAmmoSpeedAtLevel0;
@@ -368,15 +370,23 @@ namespace CustomRpTweaks.Client
 			new BtrCannonCamPatch().Enable();
 
 			BtrFlareCall = Config.Bind("22. BTR", "7. BTR signal cartridge calls the BTR", true,
-				"Firing the BTR signal cartridge (a reactive cartridge the server mod adds; spawn it or craft it) calls the BTR to the stop nearest to where the flare went up. The BTR finishes the segment it is on, then goes on to that stop without the long waits at the stops before it, and waits there for its normal pause. Needs the BTR to be on the map, and it keeps to its route. Off = the cartridge does nothing.");
+				"Firing the BTR signal cartridge (a reactive cartridge the server mod adds; spawn it or craft it) calls the BTR to the stop nearest to where the flare went up, on its route or off it. If the BTR is waiting at a stop it leaves at once, otherwise it finishes the segment it is on, then goes straight there (a second's wait at the stops on the way) and waits its normal pause. If that stop is off its route, it then drives back to the route stop nearest to it and goes on from there. Needs the BTR to be on the map. Off = the cartridge does nothing.");
 			BtrFlareMinStanding = Config.Bind("22. BTR", "8. BTR signal: minimum standing with the BTR driver", 0f,
 				new ConfigDescription("The flare only works when your standing with the BTR driver is at least this. 0 = no requirement. The questline gives about 1.3 in total (the unit is the number the trader screen shows).", new AcceptableValueRange<float>(0f, 5f)));
 			BtrFlareMaxDistance = Config.Bind("22. BTR", "9. BTR signal: furthest stop (m)", 600f,
 				new ConfigDescription("If the stop nearest to the flare is further away than this (in a straight line, ignoring height), the BTR is not called.", new AcceptableValueRange<float>(50f, 3000f)));
-			BtrFlareSkipStops = Config.Bind("22. BTR", "10. BTR signal: skip the waiting at stops on the way", true,
-				"After the call, the BTR cuts short its wait at each stop before the one it was called to (the wait shrinks to the last seconds before it leaves). Off = it waits as usual at every stop on the way.");
 			new BtrFlareSuccessPatch().Enable();
 			new BtrStopReachedPatch().Enable();
+			new BtrOffRouteTaxiPatch().Enable();
+
+			BtrRandomStart = Config.Bind("22. BTR", "10. BTR starts at a random stop of its route", true,
+				"Vanilla: the BTR appears at its entry point (on Woods, the same place nearly every raid) and drives its circle from the first stop. On = it appears at a random stop of its route instead, never one closer to you than the distance below, and carries on from there. Applies when the BTR appears (one to three minutes into the raid with the current server settings).");
+			BtrRandomStartMinDistance = Config.Bind("22. BTR", "11. Random start: not closer to you than (m)", 250f,
+				new ConfigDescription("The BTR never appears at a stop closer than this to you, so it does not pop up in front of you. If every stop is closer it starts at its entry point.", new AcceptableValueRange<float>(0f, 1500f)));
+			BtrRandomDirection = Config.Bind("22. BTR", "12. BTR drives its circle the other way round half the time", true,
+				"Vanilla: the BTR always drives a route in the order it is listed. On = for routes that go round in a circle, half the raids the order is reversed (same stops, other direction). Applies to the raid the BTR is set up in.");
+			new BtrRouteReversePatch().Enable();
+			new BtrRandomStartPatch().Enable();
 
 			BtrNotEnemyOfPmcs = Config.Bind("25. Bot hostility", "1. BTR is not an enemy of PMC bots", true,
 				"Vanilla makes every newly spawned bot an enemy of all groups of another side without checking the friendly lists, so PMC bots attack the BTR even though the server lists it as friendly. On = the BTR is skipped there when the group's friendly list says so (a PMC it really shoots can still turn on it). Off = vanilla. Applies to bots spawned after the change.");
