@@ -377,7 +377,7 @@ namespace CustomRpTweaks.Client
 				new ConfigDescription("If the stop nearest to the flare is further away than this (in a straight line, ignoring height), the BTR is not called.", new AcceptableValueRange<float>(50f, 3000f)));
 			new BtrFlareSuccessPatch().Enable();
 			new BtrStopReachedPatch().Enable();
-			new BtrOffRouteTaxiPatch().Enable();
+			new BtrRidePatch().Enable();
 
 			BtrRandomStart = Config.Bind("22. BTR", "10. BTR starts at a random stop of its route", true,
 				"Vanilla: the BTR appears at its entry point (on Woods, the same place nearly every raid) and drives its circle from the first stop. On = it appears at a random stop of its route instead, never one closer to you than the distance below, and carries on from there. Applies when the BTR appears (one to three minutes into the raid with the current server settings).");

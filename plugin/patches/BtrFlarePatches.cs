@@ -40,6 +40,11 @@ namespace CustomRpTweaks.Client.Patches
 		private static string _at;              // the stop the BTR is at, or is on its way to, in the plan
 		private static readonly Queue<string> _plan = new Queue<string>();   // the stops still to drive to, in order
 
+		// a paid ride (the driver's "take me to") that needs more than one road: the stops still to drive to, with you aboard
+		private static BTRVehicle _rideVehicle;
+		private static string _rideAt;
+		private static readonly Queue<string> _ridePlan = new Queue<string>();
+
 		internal static void Notify(string message)
 		{
 			Plugin.Log.LogInfo("BTR signal: " + message);
@@ -118,6 +123,7 @@ namespace CustomRpTweaks.Client.Patches
 			var stops = parents.Keys.Select(id => map.GetPartPathByID(id) as PathDestination).Where(stop => stop != null).ToList();
 			if (Plugin.VerboseLogging.Value)
 			{
+				Plugin.Log.LogInfo($"BTR signal: splines of the map: {string.Join(", ", map.PathSplines.Where(sp => sp != null).Select(sp => sp.id))}");
 				Plugin.Log.LogInfo($"BTR signal: flare at {flarePosition:0}, route {route.id} {string.Join(",", route.pathPoints)}, BTR {(paused ? "waiting at" : "heading for")} {start.id}; stops it can reach: "
 					+ string.Join(", ", stops.Select(s => (s, d: Flat(s.transform.position, flarePosition))).OrderBy(x => x.d).Select(x => $"{x.s.id}{(route.pathPoints.Contains(x.s.id) ? "" : " (off route)")} {x.d:0} m")));
 			}
@@ -163,6 +169,11 @@ namespace CustomRpTweaks.Client.Patches
 
 		internal static void OnStopReached(VehicleBase vehicle, PathDestination stop)
 		{
+			if (_rideVehicle != null)
+			{
+				ContinueRide(vehicle, stop);
+				return;
+			}
 			if (_target == null)
 			{
 				return;
@@ -250,6 +261,81 @@ namespace CustomRpTweaks.Client.Patches
 			}
 			_at = next;
 			Plugin.Verbose($"BTR signal: {from.id} -> {next}{(keepPause ? " after the normal wait" : "")}.");
+		}
+
+		// ---- a paid ride over more than one road ------------------------------------------------------------------------------------------------
+
+		// The driver's "take me to" asks the BTR to drive one spline from the stop it is at to the destination. When no spline joins them (typically from
+		// an off-route stop, where nothing in the route leads on) the game would fail, so the way is found on the graph of stops instead: the first stop
+		// replaces the destination in the game's call, and the rest is driven stop by stop with you aboard. Returns false to refuse the purchase.
+		internal static bool PlanRide(BtrController controller, ref string idPathDestination)
+		{
+			var vehicle = controller.BtrVehicle;
+			var parts = idPathDestination?.Split('/');
+			if (vehicle == null || parts == null || parts.Length < 2)
+			{
+				return true;
+			}
+			var current = Traverse.Create(vehicle).Field("_currentPathDestination").GetValue<PathDestination>();
+			var map = vehicle.MapPathConfig;
+			var destination = parts[1];
+			if (current == null || map == null || current.id == destination || map.GetPathSplineByPoints(current.id, destination) != null)
+			{
+				return true;
+			}
+
+			var parents = Search(BuildGraph(map, vehicle.CurrentPathConfig), current.id);
+			if (!parents.ContainsKey(destination))
+			{
+				Notify($"there is no road from {current.id} to {destination}.");
+				return false;
+			}
+
+			var path = PathTo(parents, destination);
+			Clear();   // a call or a drive back that was waiting is replaced by the ride
+			_ridePlan.Clear();
+			foreach (var id in path.Skip(1))
+			{
+				_ridePlan.Enqueue(id);
+			}
+			_rideVehicle = vehicle;
+			_rideAt = path[0];
+			idPathDestination = parts[0] + "/" + path[0];
+			Notify($"the BTR takes you to {destination} via {string.Join(", ", path.Take(path.Count - 1))}.".Replace(" via .", "."));
+			return true;
+		}
+
+		// The BTR reached a stop of the ride: on to the next one with you still aboard (the game resets "paid" at every stop and puts passengers off
+		// when it leaves an unpaid one), or, at the destination, back to normal
+		private static void ContinueRide(VehicleBase vehicle, PathDestination stop)
+		{
+			if (!ReferenceEquals(vehicle, _rideVehicle) || stop.id != _rideAt)
+			{
+				Plugin.Log.LogWarning($"BTR signal: the ride reached {stop.id}, expected {_rideAt}; dropped.");
+				_rideVehicle = null;
+				_ridePlan.Clear();
+				return;
+			}
+			if (_ridePlan.Count == 0)
+			{
+				_rideVehicle = null;
+				return;
+			}
+
+			var next = _ridePlan.Dequeue();
+			var map = ((BTRVehicle)vehicle).MapPathConfig;
+			if (map.GetPathSplineByPoints(stop.id, next) == null)
+			{
+				Plugin.Log.LogWarning($"BTR signal: no spline from {stop.id} to {next}; the ride ends here.");
+				_rideVehicle = null;
+				_ridePlan.Clear();
+				return;
+			}
+			vehicle.IsPaid = true;
+			vehicle.MoveToDestination(next);
+			ShortPause(vehicle, PassThroughWait);
+			_rideAt = next;
+			Plugin.Verbose($"BTR signal: ride {stop.id} -> {next}.");
 		}
 
 		// The pause at the current stop ends in this many seconds
@@ -340,13 +426,6 @@ namespace CustomRpTweaks.Client.Patches
 			d.y = 0f;
 			return d.magnitude;
 		}
-
-		// True while the BTR stands at a stop that is not on its route (the game's "take me to" would need a spline from there to the destination)
-		internal static bool AtOffRouteStop(BTRVehicle vehicle)
-		{
-			var current = Traverse.Create(vehicle).Field("_currentPathDestination").GetValue<PathDestination>();
-			return current != null && vehicle.CurrentPathConfig?.pathPoints != null && !vehicle.CurrentPathConfig.pathPoints.Contains(current.id);
-		}
 	}
 
 	internal class BtrFlareSuccessPatch : ModulePatch
@@ -389,21 +468,23 @@ namespace CustomRpTweaks.Client.Patches
 		}
 	}
 
-	// At a stop that is not on the route the driver's "take me to" list still names the route's stops; the game would look for a spline from here to
-	// them and fail, so the purchase is refused there (the BTR is back on its route after its wait)
-	internal class BtrOffRouteTaxiPatch : ModulePatch
+	// The driver's "take me to": see BtrCall.PlanRide
+	internal class BtrRidePatch : ModulePatch
 	{
 		protected override MethodBase GetTargetMethod() => typeof(BtrController).GetMethod(nameof(BtrController.MoveToDestination), BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly);
 
 		[PatchPrefix]
-		private static bool Prefix(BtrController __instance)
+		private static bool Prefix(BtrController __instance, ref string idPathDestination)
 		{
-			if (__instance.BtrVehicle != null && BtrCall.AtOffRouteStop(__instance.BtrVehicle))
+			try
 			{
-				BtrCall.Notify("the BTR cannot take you anywhere from this stop; wait for it to get back on its route.");
-				return false;
+				return BtrCall.PlanRide(__instance, ref idPathDestination);
 			}
-			return true;
+			catch (System.Exception e)
+			{
+				Plugin.Log.LogError("BTR ride failed: " + e);
+				return true;
+			}
 		}
 	}
 
