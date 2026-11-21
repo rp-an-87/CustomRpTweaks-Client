@@ -59,7 +59,7 @@ namespace CustomRpTweaks.Client
 		internal class Target
 		{
 			public Quest Quest;
-			public ConditionHandoverItem Condition;
+			public ConditionItem Condition;
 			public int Remaining;
 		}
 
@@ -72,7 +72,8 @@ namespace CustomRpTweaks.Client
 				return "It is locked. Unlock it first.";
 			}
 
-			if (!(item.QuestItem || CurrencyUtil.IsCurrencyId(item.TemplateId) || item.IsEmpty()))
+			// A weapon is checked against the quest's own rules instead (a gunsmith task wants it built; the other tasks are checked by FindAll)
+			if (!(item.QuestItem || CurrencyUtil.IsCurrencyId(item.TemplateId) || item is Weapon || item.IsEmpty()))
 			{
 				var inside = string.Join(", ", ((CompoundItem)item).Grids.SelectMany(grid => grid.Items).Select(content => content.ShortName.Localized()).Distinct().ToArray());
 				Plugin.Log.LogInfo($"Hand in: {item.ShortName.Localized()} counts as not empty, inside: {inside}");
@@ -93,7 +94,8 @@ namespace CustomRpTweaks.Client
 					continue;
 				}
 
-				if (conditions.Any(entry => entry is ConditionHandoverItem handover && !candidate.IsConditionDone(handover) && handover.target.Contains(item.StringTemplateId)))
+				if (conditions.Any(entry => !candidate.IsConditionDone(entry) && (entry is ConditionHandoverItem handover && handover.target.Contains(item.StringTemplateId)
+					|| entry is ConditionWeaponAssembly assembly && item is Weapon weapon && Inventory.IsWeaponFitsCondition(weapon, assembly))))
 				{
 					names.Add(candidate.Template.Name.Localized());
 				}
@@ -121,14 +123,23 @@ namespace CustomRpTweaks.Client
 
 				foreach (var entry in conditions)
 				{
-					var handover = entry as ConditionHandoverItem;
-					if (handover == null || candidate.IsConditionDone(handover) || !handover.target.Contains(item.StringTemplateId))
+					var handover = entry as ConditionItem;
+					if (handover == null || candidate.IsConditionDone(handover))
 					{
 						continue;
 					}
 
-					// All the conditions of the quest line (found in raid, durability, dogtag level) are in the game's own list
-					if (!ConditionalController<Quest>.GetItemsForCondition(inventory, handover).Contains(item))
+					if (handover is ConditionWeaponAssembly assembly)
+					{
+						// Gunsmith: the weapon as built must fit every limit of the task (the game's own test)
+						if (!(item is Weapon weapon) || !Inventory.IsWeaponFitsCondition(weapon, assembly))
+						{
+							continue;
+						}
+					}
+					else if (!(handover is ConditionHandoverItem plain) || !plain.target.Contains(item.StringTemplateId)
+						// All the conditions of the quest line (found in raid, durability, dogtag level) are in the game's own list
+						|| !ConditionalController<Quest>.GetItemsForCondition(inventory, handover).Contains(item))
 					{
 						continue;
 					}
