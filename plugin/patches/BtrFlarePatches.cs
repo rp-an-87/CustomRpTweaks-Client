@@ -403,20 +403,27 @@ namespace CustomRpTweaks.Client.Patches
 
 		internal static bool Joined(MapPathConfig map, string a, string b) => map.GetPathSplineByPoints(a, b) != null;
 
-		// Every stop of the route joined to the next by road, from the entry point to the exit point
+		// The entry point has a road to some stop of the map
+		internal static bool HasRoad(MapPathConfig map, string stop) => map.PathDestinations.Any(other => other != null && other.id != stop && Joined(map, stop, other.id));
+
+		// Each stop of the route joined to the next by road, and for a circle the last to the first (that is how the game starts the next lap). The BTR comes
+		// in from the entry point by road to the first stop, or with a random first stop from wherever the entry point has a road. The exit point is not
+		// checked: on Woods the last stop has no road to it, and the BTR only goes there after its laps, which a raid does not last for.
 		internal static bool RouteIsDrivable(MapPathConfig map, PathConfig route)
 		{
-			var sequence = new List<string> { route.enterPoint };
-			sequence.AddRange(route.pathPoints);
-			sequence.Add(route.exitPoint);
-			for (var i = 0; i < sequence.Count - 1; i++)
+			var stops = route.pathPoints;
+			for (var i = 0; i < stops.Count - 1; i++)
 			{
-				if (!Joined(map, sequence[i], sequence[i + 1]))
+				if (!Joined(map, stops[i], stops[i + 1]))
 				{
 					return false;
 				}
 			}
-			return true;
+			if (route.circle && !route.once && stops.Count > 1 && !Joined(map, stops[stops.Count - 1], stops[0]))
+			{
+				return false;
+			}
+			return Plugin.BtrRandomStart.Value ? HasRoad(map, route.enterPoint) : Joined(map, route.enterPoint, stops[0]);
 		}
 
 		internal static void DumpMap(MapPathConfig map, PathConfig route)
@@ -623,7 +630,7 @@ namespace CustomRpTweaks.Client.Patches
 				return;
 			}
 			var reversed = route.pathPoints.AsEnumerable().Reverse().ToList();
-			var candidate = new PathConfig { enterPoint = route.enterPoint, exitPoint = route.exitPoint, pathPoints = reversed };
+			var candidate = new PathConfig { enterPoint = route.enterPoint, exitPoint = route.exitPoint, pathPoints = reversed, circle = true };
 			if (!BtrCall.RouteIsDrivable(map, candidate))
 			{
 				Plugin.Verbose($"BTR route {route.id} cannot be reversed: a stop is not joined to the next by road.");
@@ -633,8 +640,9 @@ namespace CustomRpTweaks.Client.Patches
 			Plugin.Log.LogInfo($"BTR route {route.id} is driven the other way round this raid: {string.Join(",", reversed)}");
 		}
 
-		// The route may start and end at another of the map's entry points (those the map's routes use), as long as it is joined to where the route ends
-		// and to where it begins (or, with a random first stop, to any stop)
+		// The route may start and end at another of the map's entry points (those the map's routes use). Each entry point has a road to a single stop (on
+		// Woods p10 only to p5, which is why the BTR nearly always goes to the same camp first); with a random first stop any of them will do, otherwise
+		// the entry point must have a road to the route's first stop
 		private static void PickEntry(PathConfig route, MapPathConfig map)
 		{
 			if (route.once || !route.circle || route.enterPoint != route.exitPoint)
@@ -642,14 +650,12 @@ namespace CustomRpTweaks.Client.Patches
 				return;
 			}
 			var first = route.pathPoints[0];
-			var last = route.pathPoints[route.pathPoints.Count - 1];
 			var options = (map.PathsConfiguration.pathsConfigurations ?? new PathConfig[0])
 				.Where(r => r != null && r.enterPoint == r.exitPoint)
 				.Select(r => r.enterPoint)
 				.Concat(new[] { route.enterPoint })
 				.Distinct()
-				.Where(entry => BtrCall.Joined(map, last, entry)
-					&& (Plugin.BtrRandomStart.Value ? route.pathPoints.Any(stop => BtrCall.Joined(map, entry, stop)) : BtrCall.Joined(map, entry, first)))
+				.Where(entry => Plugin.BtrRandomStart.Value ? BtrCall.HasRoad(map, entry) : BtrCall.Joined(map, entry, first))
 				.ToList();
 			if (options.Count == 0)
 			{
