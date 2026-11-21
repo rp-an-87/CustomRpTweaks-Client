@@ -7,8 +7,10 @@ using SPT.Reflection.Patching;
 
 namespace CustomRpTweaks.Client.Patches
 {
-	// Sorting the stash normally packs items from the top-left. Here, while sorting the main stash, items are first
-	// placed below the reserved top rows, and only spill into them when nothing else fits.
+	// Sorting the stash normally packs items from the top-left. Two rules for the top rows of the main stash (set in the window that opens
+	// on a right-click of the sort button):
+	//  - ignored rows: items there stay where they are and nothing sorted is ever placed there
+	//  - reserved rows: sorted items are placed below them, and only spill into them when nothing else fits
 	internal static class StashSortReservePatches
 	{
 		[ThreadStatic]
@@ -21,7 +23,22 @@ namespace CustomRpTweaks.Client.Patches
 		[ThreadStatic]
 		private static int _minRow;
 
+		// 0 = off for both
 		internal static int ReservedRows => Plugin.KeepTopRowsFree.Value ? Plugin.TopRowsToKeepFree.Value : 0;
+
+		internal static int IgnoredRows => Plugin.IgnoreTopRows.Value;
+
+		// Whether an item whose top row is y and that is height rows tall stays out of the sort. One that starts in an ignored row and
+		// reaches below them is sorted (and so moved) unless the owner chose to keep it.
+		internal static bool StaysPut(int y, int height, int ignoredRows, bool sortStraddling)
+		{
+			if (ignoredRows <= 0 || y >= ignoredRows)
+			{
+				return false;
+			}
+
+			return !(sortStraddling && y + height > ignoredRows);
+		}
 
 		internal class SortPatch : ModulePatch
 		{
@@ -29,10 +46,64 @@ namespace CustomRpTweaks.Client.Patches
 				null, new[] { typeof(CompoundItem), typeof(InventoryController), typeof(bool) }, null);
 
 			[PatchPrefix]
-			private static void Prefix(CompoundItem sortedItem) => _sortingStash = sortedItem is Stash && ReservedRows > 0;
+			private static void Prefix(CompoundItem sortedItem) => _sortingStash = sortedItem is Stash && (ReservedRows > 0 || IgnoredRows > 0);
 
 			[PatchFinalizer]
 			private static void Finalizer() => _sortingStash = false;
+		}
+
+		// Sort collects the items to move with a filter that keeps the ones that are not pinned (pinned items stay where they are). The
+		// items in the ignored rows are dropped from it the same way.
+		internal class SortFilterPatch : ModulePatch
+		{
+			protected override MethodBase GetTargetMethod()
+			{
+				foreach (var type in Nested(typeof(ItemManipulator)))
+				{
+					var filter = type.GetMethod("method_10", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly, null, new[] { typeof(Item) }, null);
+					var grids = type.GetMethod("method_9", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly, null, new[] { typeof(Grid) }, null);
+					if (filter != null && grids != null && filter.ReturnType == typeof(bool))
+					{
+						return filter;
+					}
+				}
+
+				throw new InvalidOperationException("Sort's pin filter was not found");
+			}
+
+			private static IEnumerable<Type> Nested(Type type)
+			{
+				foreach (var inner in type.GetNestedTypes(BindingFlags.Public | BindingFlags.NonPublic))
+				{
+					yield return inner;
+					foreach (var deeper in Nested(inner))
+					{
+						yield return deeper;
+					}
+				}
+			}
+
+			[PatchPostfix]
+			private static void Postfix(Item gridItem, ref bool __result)
+			{
+				if (!__result || !_sortingStash || IgnoredRows <= 0)
+				{
+					return;
+				}
+
+				var address = gridItem.CurrentAddress as GridItemAddress;
+				var location = address?.LocationInGrid;
+				if ((object)location == null)
+				{
+					return;
+				}
+
+				int height = gridItem.CalculateRotatedSize(location.r).Y;
+				if (StaysPut(location.y, height, IgnoredRows, Plugin.SortItemsReachingOut.Value))
+				{
+					__result = false;
+				}
+			}
 		}
 
 		internal class FindFreeSpacePatch : ModulePatch
@@ -47,28 +118,52 @@ namespace CustomRpTweaks.Client.Patches
 					return true;
 				}
 
+				int ignored = IgnoredRows;
+				int reserved = Math.Max(ReservedRows, ignored);
+				if (reserved <= 0)
+				{
+					return true;
+				}
+
+				var location = Search(__instance, item, reserved);
+
+				// A location at the bottom edge is the stretch fallback, not a real free spot
+				if (location != null && location.y < __instance.GridHeight)
+				{
+					__result = location;
+					return false;
+				}
+
+				if (ignored > 0)
+				{
+					// Nothing fits below the reserved rows: the reserved rows may be used, the ignored ones never
+					if (reserved > ignored)
+					{
+						location = Search(__instance, item, ignored);
+					}
+
+					__result = location;
+					return false;
+				}
+
+				// Nothing fits below the reserved rows: unrestricted search
+				return true;
+			}
+
+			// Re-enters this patch, which then lets the original run, restricted to the rows from minRow downward
+			private static LocationInGrid Search(Grid grid, Item item, int minRow)
+			{
 				_firstPass = true;
-				_minRow = ReservedRows;
+				_minRow = minRow;
 				try
 				{
-					// Re-enters this patch, which then lets the original run, restricted to the rows below the reserved ones
-					var location = __instance.FindFreeSpace(item);
-
-					// A location at the bottom edge is the stretch fallback, not a real free spot
-					if (location != null && location.y < __instance.GridHeight)
-					{
-						__result = location;
-						return false;
-					}
+					return grid.FindFreeSpace(item);
 				}
 				finally
 				{
 					_firstPass = false;
 					_minRow = 0;
 				}
-
-				// Nothing fits below the reserved rows: unrestricted search
-				return true;
 			}
 		}
 

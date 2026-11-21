@@ -4,6 +4,7 @@ namespace CustomRpTweaks.Client
 	// How a setting is shown in the F12 window (BepInEx ConfigurationManager reads these fields by name)
 	internal sealed class ConfigurationManagerAttributes
 	{
+		public bool? Browsable;
 		public bool? IsAdvanced;
 		public int? Order;
 		public System.Action<BepInEx.Configuration.ConfigEntryBase> CustomDrawer;

@@ -1,6 +1,7 @@
 using System.Linq;
 using System.Reflection;
 using EFT.InventoryLogic;
+using EFT.UI;
 using EFT.UI.DragAndDrop;
 using SPT.Reflection.Patching;
 using UnityEngine;
@@ -9,14 +10,20 @@ using UnityEngine.UI;
 
 namespace CustomRpTweaks.Client.Patches
 {
-	// Hovering the stash sort button shades the top rows that sorting will keep free.
+	// Hovering the stash sort button shades the top rows that sorting treats specially: red stripes (/) for the rows that are kept free,
+	// blue stripes (\) for the rows that are ignored. Both start at the top, so where they overlap the stripes cross. Right-clicking
+	// the button opens the window that sets them, and the shading then stays up and follows the sliders.
 	internal class StashSortOverlayPatch : ModulePatch
 	{
 		private const int CellSize = 63;
 		private static readonly FieldInfo ItemField = typeof(GridSortPanel).GetField("_item", BindingFlags.Instance | BindingFlags.NonPublic);
 
-		private static GameObject _overlay;
-		private static Sprite _stripes;
+		private static GameObject _reservedBand, _ignoredBand;
+		private static Sprite _reservedStripes, _ignoredStripes;
+		private static CompoundItem _shownFor;
+
+		// While the settings window is open the shading stays, whatever the pointer does
+		internal static bool Pinned;
 
 		protected override MethodBase GetTargetMethod() => typeof(GridSortPanel).GetMethod(nameof(GridSortPanel.Awake), BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly);
 
@@ -24,23 +31,83 @@ namespace CustomRpTweaks.Client.Patches
 		private static void Postfix(GridSortPanel __instance)
 		{
 			var trigger = __instance._button.gameObject.AddComponent<EventTrigger>();
-			AddEntry(trigger, EventTriggerType.PointerEnter, () => Show((CompoundItem)ItemField.GetValue(__instance)));
-			AddEntry(trigger, EventTriggerType.PointerExit, Hide);
-			AddEntry(trigger, EventTriggerType.PointerClick, Hide);
+			AddEntry(trigger, EventTriggerType.PointerEnter, _ =>
+			{
+				var item = (CompoundItem)ItemField.GetValue(__instance);
+				Show(item);
+				ShowTip(item);
+			});
+			AddEntry(trigger, EventTriggerType.PointerExit, _ =>
+			{
+				if (!Pinned)
+				{
+					Hide();
+				}
+
+				CloseTip();
+			});
+			AddEntry(trigger, EventTriggerType.PointerClick, data =>
+			{
+				CloseTip();
+				var item = (CompoundItem)ItemField.GetValue(__instance);
+				if (item is Stash && data is PointerEventData pointer && pointer.button == PointerEventData.InputButton.Right)
+				{
+					StashSortWindow.Open(item);
+					return;
+				}
+
+				if (!Pinned)
+				{
+					Hide();
+				}
+			});
 		}
 
-		private static void AddEntry(EventTrigger trigger, EventTriggerType type, UnityEngine.Events.UnityAction action)
+		private static void AddEntry(EventTrigger trigger, EventTriggerType type, UnityEngine.Events.UnityAction<BaseEventData> action)
 		{
 			var entry = new EventTrigger.Entry { eventID = type };
-			entry.callback.AddListener(_ => action());
+			entry.callback.AddListener(action);
 			trigger.triggers.Add(entry);
 		}
 
-		private static void Show(CompoundItem item)
+		// The sort button has no tooltip of its own: the one here is only the hint for the window (with the hint setting, like the items' hotkeys)
+		private static void ShowTip(CompoundItem item)
+		{
+			if (!(item is Stash) || Plugin.HotkeyHints == null || !Plugin.HotkeyHints.Value)
+			{
+				return;
+			}
+
+			ItemUiContext.Instance?.Tooltip?.Show("Sort the stash" + "\n" + TooltipSeparators.Line(HotkeyHints.SeparatorLength) + "\n" + HotkeyHints.Open + "Right-click: rows to ignore and keep free" + HotkeyHints.Close, null, 0.25f, null);
+		}
+
+		private static void CloseTip() => ItemUiContext.Instance?.Tooltip?.Close();
+
+		internal static void Show(CompoundItem item)
 		{
 			Hide();
-			int rows = StashSortReservePatches.ReservedRows;
-			if (!(item is Stash) || rows <= 0)
+			if (!(item is Stash))
+			{
+				return;
+			}
+
+			_shownFor = item;
+			Refresh();
+		}
+
+		// Draws the bands again for the current settings (called while a slider moves)
+		internal static void Refresh()
+		{
+			DestroyBands();
+			var item = _shownFor;
+			if (item == null)
+			{
+				return;
+			}
+
+			int reserved = StashSortReservePatches.ReservedRows;
+			int ignored = StashSortReservePatches.IgnoredRows;
+			if (reserved <= 0 && ignored <= 0)
 			{
 				return;
 			}
@@ -51,51 +118,72 @@ namespace CustomRpTweaks.Client.Patches
 				return;
 			}
 
+			_reservedBand = Band(gridView, reserved, _reservedStripes ?? (_reservedStripes = Stripes(false, new Color(0.9f, 0.15f, 0.15f))));
+			// Drawn last, so on top
+			_ignoredBand = Band(gridView, ignored, _ignoredStripes ?? (_ignoredStripes = Stripes(true, new Color(0.2f, 0.5f, 1f))));
+		}
+
+		private static GameObject Band(GridView gridView, int rows, Sprite stripes)
+		{
 			rows = Mathf.Min(rows, gridView.Grid.GridHeight);
-			_overlay = new GameObject("Reserved rows overlay", typeof(RectTransform), typeof(Image));
-			var rect = (RectTransform)_overlay.transform;
+			if (rows <= 0)
+			{
+				return null;
+			}
+
+			var band = new GameObject("Sort rows overlay", typeof(RectTransform), typeof(Image));
+			var rect = (RectTransform)band.transform;
 			rect.SetParent(gridView.transform, false);
 			rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0f, 1f);
 			rect.anchoredPosition = Vector2.zero;
 			rect.sizeDelta = new Vector2(gridView.Grid.GridWidth * CellSize, rows * CellSize);
 
-			var image = _overlay.GetComponent<Image>();
-			image.sprite = Stripes();
+			var image = band.GetComponent<Image>();
+			image.sprite = stripes;
 			image.type = Image.Type.Tiled;
 			image.raycastTarget = false;
+			return band;
 		}
 
-		private static void Hide()
+		internal static void Hide()
 		{
-			if (_overlay != null)
-			{
-				Object.Destroy(_overlay);
-			}
-
-			_overlay = null;
+			DestroyBands();
+			_shownFor = null;
 		}
 
-		// Translucent red diagonal stripes, built once
-		private static Sprite Stripes()
+		private static void DestroyBands()
 		{
-			if (_stripes != null)
+			if (_reservedBand != null)
 			{
-				return _stripes;
+				Object.Destroy(_reservedBand);
 			}
 
+			if (_ignoredBand != null)
+			{
+				Object.Destroy(_ignoredBand);
+			}
+
+			_reservedBand = _ignoredBand = null;
+		}
+
+		// Translucent diagonal stripes, built once per direction
+		private static Sprite Stripes(bool mirrored, Color color)
+		{
 			const int size = 16;
 			var texture = new Texture2D(size, size, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Repeat, filterMode = FilterMode.Point };
 			for (int y = 0; y < size; y++)
 			{
 				for (int x = 0; x < size; x++)
 				{
-					texture.SetPixel(x, y, (x + y) % 8 < 3 ? new Color(0.9f, 0.15f, 0.15f, 0.275f) : new Color(0.9f, 0.15f, 0.15f, 0.075f));
+					int diagonal = mirrored ? (x - y + size) : (x + y);
+					var stripe = new Color(color.r, color.g, color.b, 0.275f);
+					var between = new Color(color.r, color.g, color.b, 0.075f);
+					texture.SetPixel(x, y, diagonal % 8 < 3 ? stripe : between);
 				}
 			}
 
 			texture.Apply();
-			_stripes = Sprite.Create(texture, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect);
-			return _stripes;
+			return Sprite.Create(texture, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect);
 		}
 	}
 }

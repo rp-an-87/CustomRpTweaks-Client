@@ -64,6 +64,8 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<float> BipodMinFlatness;
 		internal static ConfigEntry<bool> KeepTopRowsFree;
 		internal static ConfigEntry<int> TopRowsToKeepFree;
+		internal static ConfigEntry<int> IgnoreTopRows;
+		internal static ConfigEntry<bool> SortItemsReachingOut;
 		internal static ConfigEntry<bool> KeepSpeedWhileZooming;
 		internal static ConfigEntry<bool> SteadyAimHoldBreathFix;
 		internal static ConfigEntry<bool> FleaOfferTimerFix;
@@ -243,10 +245,16 @@ namespace CustomRpTweaks.Client
 
 			new SpecialSlotsLayoutPatch().Enable();
 
+			// These are set in the window that opens on a right-click of the stash's sort button, so F12 does not list them
+			var windowOnly = new ConfigurationManagerAttributes { Browsable = false };
 			KeepTopRowsFree = Config.Bind("13. Stash sort", "1. Keep top rows free when sorting", false,
-				"Sorting the stash places items below the rows set here. The top rows are only used when everything else is full.");
+				new ConfigDescription("Sorting the stash places items below the rows set here. The top rows are only used when everything else is full. Set in the window of the stash's sort button (right-click it).", null, windowOnly));
 			TopRowsToKeepFree = Config.Bind("13. Stash sort", "2. Rows to keep free", 5,
-				new ConfigDescription("How many rows, counting from the top of the stash, to keep free when sorting.", new AcceptableValueRange<int>(1, 50)));
+				new ConfigDescription("How many rows, counting from the top of the stash, to keep free when sorting.", new AcceptableValueRange<int>(1, 200), windowOnly));
+			IgnoreTopRows = Config.Bind("13. Stash sort", "3. Rows to ignore", 0,
+				new ConfigDescription("How many rows, counting from the top of the stash (the first is row 0), sorting leaves alone: the items in them stay put and nothing is placed there. 0 = off.", new AcceptableValueRange<int>(0, 200), windowOnly));
+			SortItemsReachingOut = Config.Bind("13. Stash sort", "4. Sort items that reach below the ignored rows", true,
+				new ConfigDescription("An item that starts in an ignored row but reaches into the rows below is sorted (moved). Off: it stays put with the ignored rows.", null, windowOnly));
 
 			HideoutQuickBuy = Config.Bind("02. Hideout", "1. Buy craft materials with the buy button", true,
 				"The flea market buy button of a craft buys everything the craft needs, the cheapest offers first (flea market offers, other players' and traders': every offer is ranked by its price in roubles whatever the currency, a dollar or euro offer is used when it is the cheaper one and you hold that money, otherwise the next one is; a pack sold in one piece only whole). Hover the button: the tooltip shows what it would buy and cost, and whether it can be done at all. Nothing is bought unless every item can be had and you hold the money. Money, dog tags and found-in-raid requirements are not for sale: they are used from the stash. Tools (the wrench-marked requirements) follow the setting below. There is no confirmation: the click buys, starting the craft is still up to you. Off: the game's own button (a flea market search).");
@@ -472,6 +480,7 @@ namespace CustomRpTweaks.Client
 
 			new StashSortOverlayPatch().Enable();
 			new StashSortReservePatches.SortPatch().Enable();
+			new StashSortReservePatches.SortFilterPatch().Enable();
 			new StashSortReservePatches.FindFreeSpacePatch().Enable();
 			new StashSortReservePatches.GetFreeLocationPatch().Enable();
 
