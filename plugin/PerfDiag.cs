@@ -94,6 +94,20 @@ namespace CustomRpTweaks.Client
 			Plugin.Log.LogInfo(line + $" (snapshot took {timer.Elapsed.TotalMilliseconds:0} ms)");
 		}
 
+		private static float _nextSlowLine;
+
+		// A piece of work done on hover that took long enough to be felt: one [Perf] line, at most one every 2 s, naming the item
+		internal static void NoteSlow(string what, double ms, EFT.InventoryLogic.Item item)
+		{
+			if (ms < 3.0 || Plugin.LogPerformance == null || !Plugin.LogPerformance.Value || Time.unscaledTime < _nextSlowLine)
+			{
+				return;
+			}
+
+			_nextSlowLine = Time.unscaledTime + 2f;
+			Plugin.Log.LogInfo($"[Perf] slow {what}: {ms:0.0} ms for {(item == null ? "?" : item.ShortName.Localized())} ({(item == null ? "" : item.GetType().Name)})");
+		}
+
 		private static int Count<T>() where T : UnityEngine.Object => Resources.FindObjectsOfTypeAll<T>().Length;
 	}
 }

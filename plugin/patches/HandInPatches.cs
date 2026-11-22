@@ -85,6 +85,11 @@ namespace CustomRpTweaks.Client.Patches
 				// Never let a problem with the button break the menu
 				try
 				{
+					if (UiFixesHints.SkipOurMenuEntries)
+					{
+						return;
+					}
+
 					HandIn.AddButton(__instance, __result, itemContext);
 				}
 				catch (System.Exception e)

@@ -460,6 +460,11 @@ namespace CustomRpTweaks.Client
 			// Never let a problem with our entries break the menu
 			try
 			{
+				if (UiFixesHints.SkipOurMenuEntries)
+				{
+					return;
+				}
+
 				ItemMenu.Add(__instance, itemContext, __result);
 			}
 			catch (Exception e)

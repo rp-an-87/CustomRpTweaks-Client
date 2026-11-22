@@ -129,6 +129,9 @@ namespace CustomRpTweaks.Client
 			}
 		}
 
+		// True while the hints build an item menu only to read the game's buttons from it: our menu patches leave it alone then
+		internal static bool SkipOurMenuEntries;
+
 		// The hints for the hovered item, in the form of the others: "[E] inspect / use"
 		internal static List<string> For(ItemUiContext uiContext, Item item, Func<KeyboardShortcut, string> keyLabel)
 		{
@@ -139,7 +142,19 @@ namespace CustomRpTweaks.Client
 				return hints;
 			}
 
-			var interactions = uiContext.GetItemContextInteractions(itemContext, null);
+			// Only the game's own buttons are asked about below: the entries our menu patches add (hand in, dismantle, empty, quick buy) are not
+			// needed, so they skip the work for this one build
+			ContextInteractions<EItemInfoButton> interactions;
+			SkipOurMenuEntries = true;
+			try
+			{
+				interactions = uiContext.GetItemContextInteractions(itemContext, null);
+			}
+			finally
+			{
+				SkipOurMenuEntries = false;
+			}
+
 			bool Can(EItemInfoButton button) => interactions.IsInteractionAvailable(button).Succeed;
 
 			// Several shortcuts on one key (E inspects and uses) become one hint

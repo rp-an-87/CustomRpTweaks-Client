@@ -76,7 +76,7 @@ namespace CustomRpTweaks.Client
 			if (!(item.QuestItem || CurrencyUtil.IsCurrencyId(item.TemplateId) || item is Weapon || item.IsEmpty()))
 			{
 				var inside = string.Join(", ", ((CompoundItem)item).Grids.SelectMany(grid => grid.Items).Select(content => content.ShortName.Localized()).Distinct().ToArray());
-				Plugin.Log.LogInfo($"Hand in: {item.ShortName.Localized()} counts as not empty, inside: {inside}");
+				Plugin.Verbose($"Hand in: {item.ShortName.Localized()} counts as not empty, inside: {inside}");
 				return $"It has items inside ({inside}). Empty it first.";
 			}
 
@@ -180,11 +180,19 @@ namespace CustomRpTweaks.Client
 			// One button, or "Hand in: quest name" for each when several quests want it. Each new button goes to the top, so they are added
 			// last to first.
 			Blocked.Clear();
+
+			// The quests are looked at first: it is a short loop, and most items are wanted by none. The refusal (which lists what lies inside a
+			// container) and the search of the inventory are only worked out for an item some quest wants.
+			var wanting = Wanting(questController, item);
+			if (wanting.Count == 0)
+			{
+				return;
+			}
+
 			var refusal = Refusal(item);
 			if (refusal != null)
 			{
 				// A quest wants it but the item can't go as it is: the button is there, greyed out, and says why
-				var wanting = Wanting(questController, item);
 				for (var i = wanting.Count - 1; i >= 0; i--)
 				{
 					var label = wanting.Count == 1 ? MenuKey : $"{MenuKey}: {wanting[i]}";

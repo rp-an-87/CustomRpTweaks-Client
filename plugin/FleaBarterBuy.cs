@@ -837,6 +837,11 @@ namespace CustomRpTweaks.Client
 			// Never let a problem with our entries break the menu
 			try
 			{
+				if (UiFixesHints.SkipOurMenuEntries)
+				{
+					return;
+				}
+
 				FleaBarterBuy.Add(itemContext, __result);
 			}
 			catch (Exception e)

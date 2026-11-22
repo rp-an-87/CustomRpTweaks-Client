@@ -63,7 +63,10 @@ namespace CustomRpTweaks.Client.Patches
 						return;
 					}
 
+					var timer = System.Diagnostics.Stopwatch.StartNew();
 					var block = HotkeyHints.Block(HotkeyHints.Hovered);
+					timer.Stop();
+					PerfDiag.NoteSlow("hotkey hints", timer.Elapsed.TotalMilliseconds, HotkeyHints.Hovered);
 					if (block != null)
 					{
 						text += block;
