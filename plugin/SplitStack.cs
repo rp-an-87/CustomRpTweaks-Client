@@ -70,14 +70,15 @@ namespace CustomRpTweaks.Client
 				// The new stack gets the lower half, so an odd stack keeps the extra one
 				var count = item.StackObjectsCount / 2;
 				string refusal = null;
-				var clock = Stopwatch.StartNew();
+				var perf = PerfDiag.Enabled;
+				var clock = perf ? Stopwatch.StartNew() : null;
 				double searchMs = 0;
 				foreach (var target in Dismantle.TargetsInOrder(controller, item))
 				{
 					foreach (var grid in target.Grids)
 					{
 						var address = Dismantle.FindFreePlace(grid, item);
-						searchMs = clock.Elapsed.TotalMilliseconds;
+						searchMs = perf ? clock.Elapsed.TotalMilliseconds : 0;
 						if (address == null)
 						{
 							continue;
@@ -91,14 +92,17 @@ namespace CustomRpTweaks.Client
 						}
 
 						Plugin.Verbose($"Split: {item.ShortName.Localized()} x{count} into {target.ShortName.Localized()}");
-						var opMs = clock.Elapsed.TotalMilliseconds;
+						var opMs = perf ? clock.Elapsed.TotalMilliseconds : 0;
 						_worstFrame = 0f;
 						_worstAt = 0;
 						_frame = 0;
-						_framesLeft = 60;
+						_framesLeft = perf ? 60 : 0;
 						_perf = null;
 						var outcome = await ItemUiContext.RunWithSound(controller, item, operation);
-						_perf = $"{item.ShortName.Localized()} in {target.ShortName.Localized()}, free place found after {searchMs:0.0} ms, split op built after {opMs:0.0} ms, transaction + sound {clock.Elapsed.TotalMilliseconds - opMs:0.0} ms";
+						if (perf)
+						{
+							_perf = $"{item.ShortName.Localized()} in {target.ShortName.Localized()}, free place found after {searchMs:0.0} ms, split op built after {opMs:0.0} ms, transaction + sound {clock.Elapsed.TotalMilliseconds - opMs:0.0} ms";
+						}
 						if (outcome.Failed)
 						{
 							Plugin.Log.LogWarning($"Split: {item.ShortName.Localized()} failed ({outcome.Error})");
