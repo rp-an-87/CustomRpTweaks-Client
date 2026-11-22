@@ -29,6 +29,12 @@ namespace CustomRpTweaks.Client
 		// The item behind each Dismantle button the game is about to make
 		private static readonly Dictionary<string, CompoundItem> Pending = new Dictionary<string, CompoundItem>();
 
+		internal static int PendingCount => Pending.Count;
+
+		// Entries were never removed, so every item ever right-clicked (and its parent and child items, lost gear included) stayed alive for the
+		// whole game session. Only the menu being built needs its entries, so older ones go once there are plenty.
+		private const int PendingLimit = 32;
+
 		// The buttons of the menu being built that others are placed by (what the game made: Open, Disassemble, the last of its own) and ours
 		private static SimpleContextMenuButton _open, _modding, _disassemble, _lastBuiltIn, _dismantleButton, _emptyButton, _editBuild, _buildButton;
 
@@ -56,6 +62,11 @@ namespace CustomRpTweaks.Client
 			if (item == null || item.Owner == null || item.Owner.OwnerType != EOwnerType.Profile)
 			{
 				return;
+			}
+
+			if (Pending.Count > PendingLimit)
+			{
+				Pending.Clear();
 			}
 
 			// The game may hand out the same interactions again: the old entry goes first

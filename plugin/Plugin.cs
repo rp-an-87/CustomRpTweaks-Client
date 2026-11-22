@@ -23,6 +23,7 @@ namespace CustomRpTweaks.Client
 
 		internal static ConfigEntry<bool> VerboseLogging;
 		internal static ConfigEntry<bool> LogSprintStops;
+		internal static ConfigEntry<bool> LogPerformance;
 
 		// Routine progress messages (what a hotkey did, which optional mods were found); warnings and errors always go to the log
 		internal static void Verbose(string message)
@@ -134,6 +135,7 @@ namespace CustomRpTweaks.Client
 
 		private void Update()
 		{
+			PerfDiag.Update();
 			LoadAmmoSkillSpeed.Update();
 			StashSortWindow.Update();
 			SprintStopLogPatch.Update();
@@ -227,6 +229,9 @@ namespace CustomRpTweaks.Client
 
 			VerboseLogging = Config.Bind("24. Logging", "1. Verbose logging", false,
 				"Writes a line to the BepInEx log for every step of Dismantle, Empty, Split, Equip plate, Hand in and Unchamber, and for optional mods found at startup. Warnings and errors are always logged. For troubleshooting.");
+
+			LogPerformance = Config.Bind("24. Logging", "3. Log performance snapshots", true,
+				"Writes a [Perf] line to the BepInEx log at the start and end of every raid and when the stash screen opens: memory, how many item views, grid views, textures, sprites and game objects exist, the frame time, and the size of this mod's caches. Compare the lines across raids to see what grows when the game slows down after a few raids. Each snapshot takes a few ms. For troubleshooting.");
 
 			HideOtherPlayersSkillNotifications = Config.Bind("18. Notifications", "1. Hide skill level-up notifications of other characters", true,
 				"Bots/NPCs also level up their skills (a lot, with high skill multipliers). Only your own character should be able to show the skill and weapon mastery level-up notifications.");

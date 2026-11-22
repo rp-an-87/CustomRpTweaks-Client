@@ -261,6 +261,12 @@ namespace CustomRpTweaks.Client
 		{
 			if (__instance != null && __result != null)
 			{
+				// Panels the game has destroyed (a closed flea screen) would otherwise stay in the dictionary with their task for the whole session
+				foreach (var gone in FleaAmmoBoxSearch.ShowTasks.Keys.Where(panel => panel == null).ToList())
+				{
+					FleaAmmoBoxSearch.ShowTasks.Remove(gone);
+				}
+
 				FleaAmmoBoxSearch.ShowTasks[__instance] = __result;
 			}
 		}
