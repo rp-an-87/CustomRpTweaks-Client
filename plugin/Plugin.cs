@@ -528,7 +528,7 @@ namespace CustomRpTweaks.Client
 			// Only offered when UI Fixes is installed (a soft dependency, so it has loaded before us)
 			UiFixesHints.Setup(Config);
 			SelectAllOfKind.Setup(Config);
-			UiFixesMultiselectSkip.Setup();
+			UiFixesCounting.Setup();
 			new HotkeyHintPatches.HoverEnterPatch().Enable();
 			new HotkeyHintPatches.HoverExitPatch().Enable();
 			new HotkeyHintPatches.ItemTooltipPatch().Enable();

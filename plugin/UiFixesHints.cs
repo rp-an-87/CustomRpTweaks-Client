@@ -129,15 +129,11 @@ namespace CustomRpTweaks.Client
 			}
 		}
 
-		// True while the hints build an item menu only to read the game's buttons from it: our menu patches leave it alone then
-		// (a depth, not a flag: UI Fixes' multiselect asks this for every selected item, nested in its own count)
-		private static int _skipDepth;
+		// True while an item menu is built only to read the game's buttons from it, so our menu patches leave it alone: while the hints build
+		// one, and while UI Fixes' multiselect counts interactions (it builds the menu of every selected item for every button it counts)
+		private static bool _buildingForHints;
 
-		internal static bool SkipOurMenuEntries => _skipDepth > 0;
-
-		internal static void BeginSkippingOurMenuEntries() => _skipDepth++;
-
-		internal static void EndSkippingOurMenuEntries() => _skipDepth = Math.Max(0, _skipDepth - 1);
+		internal static bool SkipOurMenuEntries => _buildingForHints || UiFixesCounting.Counting;
 
 		// The hints for the hovered item, in the form of the others: "[E] inspect / use"
 		internal static List<string> For(ItemUiContext uiContext, Item item, Func<KeyboardShortcut, string> keyLabel)
@@ -152,14 +148,14 @@ namespace CustomRpTweaks.Client
 			// Only the game's own buttons are asked about below: the entries our menu patches add (hand in, dismantle, empty, quick buy) are not
 			// needed, so they skip the work for this one build
 			ContextInteractions<EItemInfoButton> interactions;
-			BeginSkippingOurMenuEntries();
+			_buildingForHints = true;
 			try
 			{
 				interactions = uiContext.GetItemContextInteractions(itemContext, null);
 			}
 			finally
 			{
-				EndSkippingOurMenuEntries();
+				_buildingForHints = false;
 			}
 
 			bool Can(EItemInfoButton button) => interactions.IsInteractionAvailable(button).Succeed;
