@@ -18,7 +18,7 @@ namespace CustomRpTweaks.Client.Patches
 		[PatchPostfix]
 		private static void Postfix(FlareCartridge __instance, Ammo flareCartridge)
 		{
-			if (!Plugin.BtrFlareRecolour.Value || flareCartridge == null || flareCartridge.TemplateId != BtrCall.AmmoId)
+			if (!Plugin.BtrFlareRecolour.Value || flareCartridge == null || !BtrCall.IsBtrAmmo(flareCartridge.TemplateId))
 			{
 				return;
 			}

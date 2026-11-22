@@ -25,6 +25,10 @@ namespace CustomRpTweaks.Client.Patches
 	{
 		// ammo id of the cartridge, same as BtrFlareItems.AmmoId in the server mod
 		internal const string AmmoId = "6a1b7c0d4e5f60718293a4b6";
+		// the loose 26x75 round for the ZiD SP-81 signal pistol (BtrFlareItems.PistolAmmoId)
+		internal const string PistolAmmoId = "6a1b7c0d4e5f60718293a4b9";
+
+		internal static bool IsBtrAmmo(string templateId) => templateId == AmmoId || templateId == PistolAmmoId;
 		internal const string BtrTraderId = "656f0f98d80a697f855d34b1";
 
 		private enum Kind { None, Call, Return, FirstLeg }
@@ -351,7 +355,7 @@ namespace CustomRpTweaks.Client.Patches
 		[PatchPostfix]
 		private static void Postfix(Player __instance, Vector3 position, AmmoTemplate ammoTemplate)
 		{
-			if (ammoTemplate == null || ammoTemplate._id != BtrCall.AmmoId)
+			if (ammoTemplate == null || !BtrCall.IsBtrAmmo(ammoTemplate._id))
 			{
 				return;
 			}
