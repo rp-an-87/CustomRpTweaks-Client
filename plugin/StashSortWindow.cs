@@ -293,22 +293,17 @@ namespace CustomRpTweaks.Client
 				copy.SetActive(true);
 				var slider = copy.GetComponent<NumberSlider>();
 				Dump(copy.transform);
-				var track = (RectTransform)slider._slider.transform;
+				// The slider is the copy's root (track, notches and handle are its children); the value box is a child of it, taken out
+				// to sit beside it
 				var box = (RectTransform)slider._valueInput.transform;
-				track.SetParent(row, false);
 				box.SetParent(row, false);
-				Size(track, height: _unit * 1.6f, flexWidth: 1f).minWidth = _unit * 6f;
+				var track = copy.GetComponent<LayoutElement>() ?? copy.AddComponent<LayoutElement>();
+				track.ignoreLayout = false;
+				track.minWidth = _unit * 6f;
+				track.preferredWidth = _unit * 6f;
+				track.flexibleWidth = 1f;
+				track.minHeight = track.preferredHeight = _unit * 1.6f;
 				Size(box, width: _unit * 4f, height: _unit * 1.8f);
-				copy.AddComponent<LayoutElement>().ignoreLayout = true;
-				foreach (var graphic in copy.GetComponents<Graphic>())
-				{
-					graphic.enabled = false;
-				}
-
-				for (int i = copy.transform.childCount - 1; i >= 0; i--)
-				{
-					UnityEngine.Object.Destroy(copy.transform.GetChild(i).gameObject);
-				}
 
 				slider._slider.wholeNumbers = true;
 				slider.Show(0f, Mathf.Max(1, max), "0");
@@ -390,10 +385,20 @@ namespace CustomRpTweaks.Client
 				}
 
 				box.gameObject.AddComponent<RectMask2D>();
-				var rect = (RectTransform)copy.transform;
-				rect.anchorMin = Vector2.zero;
-				rect.anchorMax = Vector2.one;
-				rect.offsetMin = rect.offsetMax = Vector2.zero;
+				// The game's row is 800 wide with the frame at its far right: the root and the frame both fill our small box
+				var layout = copy.GetComponent<LayoutElement>();
+				if (layout != null)
+				{
+					UnityEngine.Object.Destroy(layout);
+				}
+
+				Stretch((RectTransform)copy.transform, 0f, 0f, 0f, 0f);
+				var frame = copy.transform.Find("Background") as RectTransform;
+				if (frame != null)
+				{
+					Stretch(frame, 0f, 0f, 0f, 0f);
+				}
+
 				var toggle = copy.GetComponent<UpdatableToggle>();
 				toggle.UpdateValue(on, false);
 				toggle.Bind(changed);
