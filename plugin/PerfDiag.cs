@@ -24,18 +24,21 @@ namespace CustomRpTweaks.Client
 		private static float _smoothedMs = 16f;
 		private static float _stashFollowUp = -1f;
 
+		internal static bool Enabled => Plugin.LogPerformance != null && Plugin.LogPerformance.Value;
+
 		internal static void Update()
 		{
-			// Always tracked, so a snapshot shows what the frame time was, not only the moment it was taken
+			// With the setting off nothing is measured or logged
+			if (!Enabled)
+			{
+				return;
+			}
+
+			// Tracked every frame, so a snapshot shows what the frame time was, not only the moment it was taken
 			var ms = Time.unscaledDeltaTime * 1000f;
 			if (ms > 0f && ms < 1000f)
 			{
 				_smoothedMs += (ms - _smoothedMs) * 0.05f;
-			}
-
-			if (Plugin.LogPerformance == null || !Plugin.LogPerformance.Value)
-			{
-				return;
 			}
 
 			try
@@ -145,7 +148,7 @@ namespace CustomRpTweaks.Client
 		// A piece of work done on hover that took long enough to be felt: one [Perf] line, at most one every 2 s, naming the item
 		internal static void NoteSlow(string what, double ms, EFT.InventoryLogic.Item item)
 		{
-			if (ms < 3.0 || Plugin.LogPerformance == null || !Plugin.LogPerformance.Value || Time.unscaledTime < _nextSlowLine)
+			if (ms < 3.0 || !Enabled || Time.unscaledTime < _nextSlowLine)
 			{
 				return;
 			}
