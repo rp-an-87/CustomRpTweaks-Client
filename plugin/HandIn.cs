@@ -94,8 +94,11 @@ namespace CustomRpTweaks.Client
 					continue;
 				}
 
-				if (conditions.Any(entry => !candidate.IsConditionDone(entry) && (entry is ConditionHandoverItem handover && handover.target.Contains(item.StringTemplateId)
-					|| entry is ConditionWeaponAssembly assembly && assembly.target.Contains(item.StringTemplateId))))
+				// The template test first: "is this condition done" runs the condition's progress getter (and its children's), which is far
+				// more work, and nearly every condition of nearly every quest is about some other item
+				var id = item.StringTemplateId;
+				if (conditions.Any(entry => (entry is ConditionHandoverItem handover && handover.target.Contains(id)
+					|| entry is ConditionWeaponAssembly assembly && assembly.target.Contains(id)) && !candidate.IsConditionDone(entry)))
 				{
 					names.Add(candidate.Template.Name.Localized());
 				}
@@ -124,7 +127,18 @@ namespace CustomRpTweaks.Client
 				foreach (var entry in conditions)
 				{
 					var handover = entry as ConditionItem;
-					if (handover == null || candidate.IsConditionDone(handover))
+					if (handover == null)
+					{
+						continue;
+					}
+
+					// The cheap tests (is it a weapon, is the template in the list) before "is the condition done", which runs its progress getter
+					if (handover is ConditionWeaponAssembly ? !(item is Weapon) : !(handover is ConditionHandoverItem listed && listed.target.Contains(item.StringTemplateId)))
+					{
+						continue;
+					}
+
+					if (candidate.IsConditionDone(handover))
 					{
 						continue;
 					}

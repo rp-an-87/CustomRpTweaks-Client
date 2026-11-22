@@ -465,7 +465,9 @@ namespace CustomRpTweaks.Client
 					return;
 				}
 
+				var started = PerfDiag.Start();
 				ItemMenu.Add(__instance, itemContext, __result);
+				PerfDiag.Stop("dismantle/empty/build entries", started);
 			}
 			catch (Exception e)
 			{
@@ -481,6 +483,19 @@ namespace CustomRpTweaks.Client
 
 		[PatchPrefix]
 		private static bool Prefix(InteractionButtonsContainer __instance, DynamicContextInteraction interaction)
+		{
+			var started = PerfDiag.Start();
+			try
+			{
+				return Handle(__instance, interaction);
+			}
+			finally
+			{
+				PerfDiag.Stop("our menu buttons", started);
+			}
+		}
+
+		private static bool Handle(InteractionButtonsContainer __instance, DynamicContextInteraction interaction)
 		{
 			if (ItemMenu.IsOurEntry(__instance == null ? null : interaction) && interaction.Key == WeaponBuildBuy.Key)
 			{
@@ -521,7 +536,9 @@ namespace CustomRpTweaks.Client
 			{
 				if (ItemMenu.IsOurEntry(interaction))
 				{
+					var started = PerfDiag.Start();
 					ItemMenu.Place(__instance, interaction);
+					PerfDiag.Stop("placing our buttons", started);
 				}
 			}
 			catch (Exception e)

@@ -842,7 +842,9 @@ namespace CustomRpTweaks.Client
 					return;
 				}
 
+				var started = PerfDiag.Start();
 				FleaBarterBuy.Add(itemContext, __result);
+				PerfDiag.Stop("quick buy entry", started);
 			}
 			catch (Exception e)
 			{

@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using Comfort.Common;
 using EFT;
 using EFT.UI.DragAndDrop;
@@ -38,6 +40,7 @@ namespace CustomRpTweaks.Client
 
 			try
 			{
+				FlushStages();
 				var inRaid = Singleton<GameWorld>.Instantiated && Singleton<GameWorld>.Instance.MainPlayer != null;
 				if (inRaid != _inRaid)
 				{
@@ -92,6 +95,49 @@ namespace CustomRpTweaks.Client
 				+ $", own caches: menu entries {ItemMenu.PendingCount}, flea panels {FleaAmmoBoxSearch.ShowTasks.Count}";
 			timer.Stop();
 			Plugin.Log.LogInfo(line + $" (snapshot took {timer.Elapsed.TotalMilliseconds:0} ms)");
+		}
+
+		// Menu work is timed in stages that add up over a frame: one build of an item menu is cheap, but a selection of many items builds many of
+		// them (UI Fixes asks for every selected item), so a single call is never "slow" and only the sum shows. One line per frame, when the
+		// sum is over 4 ms, with each stage's calls and time.
+		private static readonly System.Collections.Generic.Dictionary<string, KeyValuePair<int, double>> Stages = new System.Collections.Generic.Dictionary<string, KeyValuePair<int, double>>();
+		private static int _stagesFrame = -1;
+
+		// 0 when the diagnostics are off, so the stage costs one setting read
+		internal static long Start() => Plugin.LogPerformance != null && Plugin.LogPerformance.Value ? Stopwatch.GetTimestamp() : 0L;
+
+		internal static void Stop(string stage, long started)
+		{
+			if (started == 0L)
+			{
+				return;
+			}
+
+			var ms = (Stopwatch.GetTimestamp() - started) * 1000.0 / Stopwatch.Frequency;
+			Stages.TryGetValue(stage, out var so);
+			Stages[stage] = new KeyValuePair<int, double>(so.Key + 1, so.Value + ms);
+			_stagesFrame = Time.frameCount;
+		}
+
+		private static void FlushStages()
+		{
+			if (Stages.Count == 0 || Time.frameCount == _stagesFrame)
+			{
+				return;
+			}
+
+			double total = 0;
+			foreach (var pair in Stages)
+			{
+				total += pair.Value.Value;
+			}
+
+			if (total >= 4.0)
+			{
+				Plugin.Log.LogInfo("[Perf] menu work " + total.ToString("0.0") + " ms in one frame: " + string.Join(", ", Stages.Select(pair => $"{pair.Key} x{pair.Value.Key} {pair.Value.Value:0.0} ms")));
+			}
+
+			Stages.Clear();
 		}
 
 		private static float _nextSlowLine;

@@ -90,7 +90,9 @@ namespace CustomRpTweaks.Client.Patches
 						return;
 					}
 
+					var started = PerfDiag.Start();
 					HandIn.AddButton(__instance, __result, itemContext);
+					PerfDiag.Stop("hand in", started);
 				}
 				catch (System.Exception e)
 				{
