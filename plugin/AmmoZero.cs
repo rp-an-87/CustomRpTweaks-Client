@@ -76,12 +76,22 @@ namespace CustomRpTweaks.Client
 			_have = true;
 			_weapon = weapon;
 			_ammo = ammo;
-			Timer.Restart();
+			// Timed only with the performance setting on
+			var timed = PerfDiag.Enabled;
+			if (timed)
+			{
+				Timer.Restart();
+			}
+
 			weapon.RecalculateOpticCalibrationPoints();
 			animation.method_2(); // the sight is re-aimed on the next frame
 			animation.method_14(); // iron sights
-			Timer.Stop();
-			Plugin.Verbose($"Ammo zero: rebuilt for {(ammo == null ? "default ammo" : ammo.NameLocalizationKey)} in {Timer.Elapsed.TotalMilliseconds:0.00} ms");
+			if (timed)
+			{
+				Timer.Stop();
+			}
+
+			Plugin.Verbose($"Ammo zero: rebuilt for {(ammo == null ? "default ammo" : ammo.NameLocalizationKey)}" + (timed ? $" in {Timer.Elapsed.TotalMilliseconds:0.00} ms" : string.Empty));
 		}
 
 		// Finer zero steps: the steps in the setting that fall inside the sight's own range are added; the sight's own steps stay

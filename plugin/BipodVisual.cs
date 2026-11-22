@@ -35,12 +35,16 @@ namespace CustomRpTweaks.Client
 
 				var state = controller.BipodState;
 				var flag = controller.FirearmsAnimator.Animator.GetBool(AnimationControllerParametersTable.BOOL_BIPOD);
-				var used = player.ProceduralWeaponAnimation != null && player.ProceduralWeaponAnimation.IsBipodUsed;
-				var now = $"state {state}, animation flag {flag}, procedural {used}";
-				if (now != _last)
+				// The state text is only built for the log, so only with verbose logging on
+				if (Plugin.VerboseLogging != null && Plugin.VerboseLogging.Value)
 				{
-					_last = now;
-					Plugin.Verbose($"Bipod: {now}");
+					var used = player.ProceduralWeaponAnimation != null && player.ProceduralWeaponAnimation.IsBipodUsed;
+					var now = $"state {state}, animation flag {flag}, procedural {used}";
+					if (now != _last)
+					{
+						_last = now;
+						Plugin.Verbose($"Bipod: {now}");
+					}
 				}
 
 				if (state == flag)

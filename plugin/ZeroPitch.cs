@@ -89,10 +89,11 @@ namespace CustomRpTweaks.Client
 			var turn = VerticalTurn(fromShortest.normalized, toPoint.normalized, right);
 			var state = new State { Applied = true, Target = target, Rotation = target.rotation };
 			target.rotation = turn * target.rotation;
-			var turned = AngleBetween(state.Rotation * Vector3.forward, target.forward);
-			if (Time.unscaledTime >= _nextLog)
+			// The angle is only worked out for the log line, so only with verbose logging on
+			if (Plugin.VerboseLogging != null && Plugin.VerboseLogging.Value && Time.unscaledTime >= _nextLog)
 			{
 				_nextLog = Time.unscaledTime + 2f;
+				var turned = AngleBetween(state.Rotation * Vector3.forward, target.forward);
 				Plugin.Verbose($"Zero pitch: {what} turned {turned:0.000} degrees since the shortest zero ({sight.GetCurrentOpticCalibrationDistance()} m)");
 			}
 
