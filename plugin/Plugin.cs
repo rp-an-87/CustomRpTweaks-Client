@@ -121,6 +121,8 @@ namespace CustomRpTweaks.Client
 
 		internal static ConfigEntry<bool> HotkeyHints;
 
+		internal static ConfigEntry<bool> ModFilterEnabled;
+
 		internal static ConfigEntry<bool> PriceIndicator;
 		internal static ConfigEntry<string> PriceIndicatorNewColor;
 		internal static ConfigEntry<int> PriceIndicatorTraderSize;
@@ -141,6 +143,7 @@ namespace CustomRpTweaks.Client
 			RangefinderZero.Update();
 			AmmoZero.Update();
 			WeaponBuildBuy.Update();
+			ModFilter.Update();
 			BipodVisual.Update();
 		}
 
@@ -409,6 +412,11 @@ namespace CustomRpTweaks.Client
 				"Vanilla: while Tagilla waits in ambush he picks the nearest non-scav enemy, but only real players count, so an AI PMC shooting him is never chosen and he keeps running at the player. On = AI PMCs count too (scavs still never do). Off = vanilla. Changes apply live.");
 			new TagillaFeelIncludesAIPatch().Enable();
 
+
+			ModFilterEnabled = Config.Bind("26. Modding", "1. Filter mod lists by typing", true,
+				"While a part list is open in the weapon builds screen or the modding screen, whatever you type dims the parts whose name (short or full, upper or lower case) does not contain it. Backspace deletes. The filter is empty each time a list opens or closes, and any mouse click clears it. Typed letters still reach the game's own hotkeys.");
+			new ModFilterShowPatch().Enable();
+			new ModFilterClosePatch().Enable();
 
 			TaskSearchBox = Config.Bind("04. Tasks screen", "1. Search box", true,
 				"Adds a search box to the right of the Active / Operational tasks toggles on the tasks screen. Type words to narrow the list to the tasks whose name, trader or location contain all of them (any word in any of the three, upper or lower case). The red cross in the box clears it. The box is emptied each time the screen opens. Takes effect the next time the tasks screen opens.");
