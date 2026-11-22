@@ -24,9 +24,9 @@ namespace CustomRpTweaks.Client.Patches
 		private static int _minRow;
 
 		// 0 = off for both
-		internal static int ReservedRows => Plugin.KeepTopRowsFree.Value ? Plugin.TopRowsToKeepFree.Value : 0;
+		internal static int ReservedRows => Plugin.StashSortRows.Value && Plugin.KeepTopRowsFree.Value ? Plugin.TopRowsToKeepFree.Value : 0;
 
-		internal static int IgnoredRows => Plugin.IgnoreTopRows.Value;
+		internal static int IgnoredRows => Plugin.StashSortRows.Value ? Plugin.IgnoreTopRows.Value : 0;
 
 		// Whether an item whose top row is y and that is height rows tall stays out of the sort. One that starts in an ignored row and
 		// reaches below them is sorted (and so moved) unless the owner chose to keep it.

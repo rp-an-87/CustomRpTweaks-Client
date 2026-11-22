@@ -66,6 +66,7 @@ namespace CustomRpTweaks.Client
 		internal static ConfigEntry<int> TopRowsToKeepFree;
 		internal static ConfigEntry<int> IgnoreTopRows;
 		internal static ConfigEntry<bool> SortItemsReachingOut;
+		internal static ConfigEntry<bool> StashSortRows;
 		internal static ConfigEntry<bool> KeepSpeedWhileZooming;
 		internal static ConfigEntry<bool> SteadyAimHoldBreathFix;
 		internal static ConfigEntry<bool> FleaOfferTimerFix;
@@ -253,6 +254,8 @@ namespace CustomRpTweaks.Client
 
 			// These are set in the window that opens on a right-click of the stash's sort button, so F12 does not list them
 			var windowOnly = new ConfigurationManagerAttributes { Browsable = false };
+			StashSortRows = Config.Bind("13. Stash sort", "0. Enable ignored and kept-free rows", true,
+				"Master switch for the stash sort rows: the ignored rows, the kept-free rows, the shading over the stash, and the settings window of the sort button (right-click) with its tooltip hint. Off: sorting the stash is vanilla. The rows themselves are set in that window.");
 			KeepTopRowsFree = Config.Bind("13. Stash sort", "1. Keep top rows free when sorting", false,
 				new ConfigDescription("Sorting the stash places items below the rows set here. The top rows are only used when everything else is full. Set in the window of the stash's sort button (right-click it).", null, windowOnly));
 			TopRowsToKeepFree = Config.Bind("13. Stash sort", "2. Rows to keep free", 5,

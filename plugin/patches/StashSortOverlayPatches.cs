@@ -50,7 +50,7 @@ namespace CustomRpTweaks.Client.Patches
 			{
 				CloseTip();
 				var item = (CompoundItem)ItemField.GetValue(__instance);
-				if (item is Stash && data is PointerEventData pointer && pointer.button == PointerEventData.InputButton.Right)
+				if (Plugin.StashSortRows.Value && item is Stash && data is PointerEventData pointer && pointer.button == PointerEventData.InputButton.Right)
 				{
 					StashSortWindow.Open(item);
 					return;
@@ -73,7 +73,7 @@ namespace CustomRpTweaks.Client.Patches
 		// The sort button has no tooltip of its own: the one here is only the hint for the window (with the hint setting, like the items' hotkeys)
 		private static void ShowTip(CompoundItem item)
 		{
-			if (!(item is Stash) || Plugin.HotkeyHints == null || !Plugin.HotkeyHints.Value)
+			if (!Plugin.StashSortRows.Value || !(item is Stash) || Plugin.HotkeyHints == null || !Plugin.HotkeyHints.Value)
 			{
 				return;
 			}
