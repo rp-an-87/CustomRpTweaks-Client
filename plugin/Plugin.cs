@@ -373,25 +373,25 @@ namespace CustomRpTweaks.Client
 			new FleaBarterBuyMenuPatch().Enable();
 			new FleaBarterBuyButtonsPatch().Enable();
 
-			BtrCannonCam = Config.Bind("22. BTR", "1. Cannon camera while the BTR drives you", true,
+			BtrCannonCam = Config.Bind("22. BTR", "01. Cannon camera while the BTR drives you", true,
 				"While the BTR is driving you somewhere (you are inside it and it is moving), the camera is moved to its turret and looks where the cannon points. Your character stays in the BTR and is visible. When the BTR stops, you get out, or you turn this off, the normal first-person view is back on the next frame.");
-			BtrCannonCamDistance = Config.Bind("22. BTR", "2. Camera distance behind the cannon", 3f,
+			BtrCannonCamDistance = Config.Bind("22. BTR", "02. Camera distance behind the cannon", 3f,
 				new ConfigDescription("Metres the camera sits behind the cannon's muzzle, along its line. Too small and the camera is inside the barrel. Changes apply live.", new AcceptableValueRange<float>(0f, 10f)));
-			BtrCannonCamHeight = Config.Bind("22. BTR", "3. Camera height above the cannon", 1.2f,
+			BtrCannonCamHeight = Config.Bind("22. BTR", "03. Camera height above the cannon", 1.2f,
 				new ConfigDescription("Metres the camera sits above the cannon's muzzle. Negative values put it below. Changes apply live.", new AcceptableValueRange<float>(-2f, 5f)));
-			BtrCannonCamSmoothing = Config.Bind("22. BTR", "4. Camera smoothing", 0.3f,
+			BtrCannonCamSmoothing = Config.Bind("22. BTR", "04. Camera smoothing", 0.3f,
 				new ConfigDescription("Seconds the camera takes to catch up with the cannon's direction (its position catches up four times faster). Higher = steadier but laggier. 0 = no smoothing (twitchy). Changes apply live.", new AcceptableValueRange<float>(0f, 1.5f)));
-			BtrCannonCamTransition = Config.Bind("22. BTR", "5. Transition time", 0.9f,
+			BtrCannonCamTransition = Config.Bind("22. BTR", "05. Transition time", 0.9f,
 				new ConfigDescription("Seconds the camera takes to glide between your normal view and the cannon view, both ways (when the BTR starts or stops, you get out, or a screen opens or closes). 0 = instant cut. Changes apply live.", new AcceptableValueRange<float>(0f, 3f)));
-			BtrCannonCamFirstPersonInScreens = Config.Bind("22. BTR", "6. First person while a screen is open", true,
+			BtrCannonCamFirstPersonInScreens = Config.Bind("22. BTR", "06. First person while a screen is open", true,
 				"While the BTR drives you, the camera goes back to your normal first-person view when you open your inventory or talk to the driver (or any other full screen is open), and returns to the cannon view when you close it. Changes apply live.");
 			new BtrCannonCamPatch().Enable();
 
-			BtrFlareCall = Config.Bind("22. BTR", "7. BTR signal cartridge calls the BTR", true,
+			BtrFlareCall = Config.Bind("22. BTR", "07. BTR signal cartridge calls the BTR", true,
 				"Firing the BTR signal cartridge (a reactive cartridge the server mod adds; Prapor sells it) calls the BTR to the stop nearest to where the flare went up, on its route or off it. If the BTR is waiting at a stop it leaves at once, otherwise it finishes the segment it is on, then goes straight there and waits its normal pause. If that stop is off its route, it then drives back to the route stop nearest to it and goes on from there. Needs the BTR to be on the map. Off = the cartridge does nothing.");
-			BtrFlareMinStanding = Config.Bind("22. BTR", "8. BTR signal: minimum standing with the BTR driver", 0.4f,
+			BtrFlareMinStanding = Config.Bind("22. BTR", "08. BTR signal: minimum standing with the BTR driver", 0.4f,
 				new ConfigDescription("The BTR only answers the flare when your standing with the BTR driver is at least this; below it the flare does nothing (you get a message). Anyone can buy the cartridge from Prapor, this is what keeps it useless until you have worked with the BTR. 0 = no requirement. His questline gives about 1.3 in total (the unit is the number the trader screen shows), so the default is about the middle.", new AcceptableValueRange<float>(0f, 5f)));
-			BtrFlareMaxDistance = Config.Bind("22. BTR", "9. BTR signal: furthest stop (m)", 600f,
+			BtrFlareMaxDistance = Config.Bind("22. BTR", "09. BTR signal: furthest stop (m)", 600f,
 				new ConfigDescription("If the stop nearest to the flare is further away than this (in a straight line, ignoring height), the BTR is not called.", new AcceptableValueRange<float>(50f, 3000f)));
 			new BtrFlareSuccessPatch().Enable();
 			new BtrStopReachedPatch().Enable();
